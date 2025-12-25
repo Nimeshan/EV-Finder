@@ -3,6 +3,38 @@ import 'package:flutter/material.dart';
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
+  // Sample transaction data
+  final List<Map<String, dynamic>> transactions = const [
+    {
+      'name': 'Rajagiriya Station 1',
+      'date': 'Today, 11PM',
+      'energy': '15.1 kWh',
+      'amount': -12.11,
+      'isCredit': false,
+    },
+    {
+      'name': 'Solar Panel Power Ex',
+      'date': 'Today, 11PM',
+      'energy': '15.1 kWh',
+      'amount': 12.11,
+      'isCredit': true,
+    },
+    {
+      'name': 'Rajagiriya Station 1',
+      'date': 'Today, 11PM',
+      'energy': '15.1 kWh',
+      'amount': -12.11,
+      'isCredit': false,
+    },
+    {
+      'name': 'Solar Panel Power Ex',
+      'date': 'Today, 11PM',
+      'energy': '15.1 kWh',
+      'amount': 12.11,
+      'isCredit': true,
+    },
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -19,13 +51,97 @@ class HistoryScreen extends StatelessWidget {
           ),
         ),
       ),
-      body: const Center(
-        child: Text(
-          'History Screen',
-          style: TextStyle(color: Colors.white),
-        ),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(16.0),
+        itemCount: transactions.length,
+        itemBuilder: (context, index) {
+          final transaction = transactions[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: _buildTransactionCard(
+              name: transaction['name'] as String,
+              date: transaction['date'] as String,
+              energy: transaction['energy'] as String,
+              amount: transaction['amount'] as double,
+              isCredit: transaction['isCredit'] as bool,
+            ),
+          );
+        },
       ),
       bottomNavigationBar: _buildBottomNavigationBar(context, 2),
+    );
+  }
+
+  Widget _buildTransactionCard({
+    required String name,
+    required String date,
+    required String energy,
+    required double amount,
+    required bool isCredit,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A5A4A), // Dark olive green
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          // Left: Circular icon with red border and EV charging plug
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.red,
+                width: 2,
+              ),
+            ),
+            child: const Icon(
+              Icons.ev_station,
+              color: Colors.red,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Middle: Transaction details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$date, $energy',
+                  style: const TextStyle(
+                    color: Color(0xFFB0B0B0), // Light gray
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Right: Transaction amount
+          Text(
+            '${amount >= 0 ? '+' : ''}\$${amount.abs().toStringAsFixed(2)}',
+            style: TextStyle(
+              color: isCredit ? const Color(0xFF4CAF50) : Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -88,4 +204,3 @@ class HistoryScreen extends StatelessWidget {
     );
   }
 }
-

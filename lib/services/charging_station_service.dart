@@ -5,31 +5,41 @@ import '../models/charging_station.dart';
 class ChargingStationService {
   // Using Open Charge Map API (free and open source)
   static const String baseUrl = 'https://api.openchargemap.io/v3/poi';
+  static const String apiKey = '667483b3-7855-46a3-a3cf-8593b5e70a48';
   
-  // For demo purposes, we'll use mock data that matches the UI
-  // In production, replace this with actual API calls
   Future<List<ChargingStation>> getNearbyStations(
     double latitude,
     double longitude,
     {double radiusKm = 10}
   ) async {
     try {
-      // Try to fetch from Open Charge Map API
+      // Fetch from Open Charge Map API
       final url = Uri.parse(
-        '$baseUrl/?output=json&latitude=$latitude&longitude=$longitude&distance=$radiusKm&distanceunit=KM&maxresults=20'
+        '$baseUrl/?key=$apiKey&output=json&latitude=$latitude&longitude=$longitude&distance=$radiusKm&distanceunit=KM&maxresults=20&compact=true&verbose=false'
       );
       
       final response = await http.get(url);
       
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => ChargingStation.fromJson(json)).toList();
+        if (data.isNotEmpty) {
+          final stations = data.map((json) => ChargingStation.fromJson(json)).toList();
+          // Sort by distance (closest first)
+          stations.sort((a, b) => a.distance.compareTo(b.distance));
+          return stations;
+        } else {
+          // If no results, return mock data for demonstration
+          print('No stations found in area, using mock data');
+          return _getMockStations(latitude, longitude);
+        }
       } else {
         // Fallback to mock data if API fails
+        print('API Error: ${response.statusCode} - ${response.body}');
         return _getMockStations(latitude, longitude);
       }
     } catch (e) {
       // Return mock data on error
+      print('Error fetching stations: $e');
       return _getMockStations(latitude, longitude);
     }
   }

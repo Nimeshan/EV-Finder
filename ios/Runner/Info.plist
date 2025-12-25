@@ -50,8 +50,5 @@
 	<string>This app needs access to your location to find nearby EV charging stations.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>This app needs access to your location to find nearby EV charging stations.</string>
-	<!-- Google Maps API Key -->
-	<key>GMSApiKey</key>
-	<string>YOUR_GOOGLE_MAPS_API_KEY</string>
 </dict>
 </plist>

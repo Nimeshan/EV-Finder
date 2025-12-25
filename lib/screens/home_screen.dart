@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/charging_station.dart';
 import '../services/charging_station_service.dart';
+import '../services/geocoding_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,14 +14,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   final ChargingStationService _stationService = ChargingStationService();
+  final GeocodingService _geocodingService = GeocodingService();
   List<ChargingStation> _stations = [];
   ChargingStation? _selectedStation;
   Position? _currentPosition;
   String _selectedFilter = 'Available';
   final TextEditingController _searchController = TextEditingController();
-  String? _mapError;
+  double _currentZoom = 14.0;
+  LatLng _center = const LatLng(6.9271, 79.8612); // Default to Colombo, Sri Lanka
+  bool _isSearching = false;
+  bool _showFilters = true; // Initially show filters
 
   @override
   void initState() {
@@ -31,8 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        // Use default location if service is not enabled
-        _loadStations(6.9271, 79.8612); // Default to Colombo, Sri Lanka
+        _loadStations(_center.latitude, _center.longitude);
         return;
       }
 
@@ -40,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          _loadStations(6.9271, 79.8612);
+          _loadStations(_center.latitude, _center.longitude);
           return;
         }
       }
@@ -48,10 +53,12 @@ class _HomeScreenState extends State<HomeScreen> {
       Position position = await Geolocator.getCurrentPosition();
       setState(() {
         _currentPosition = position;
+        _center = LatLng(position.latitude, position.longitude);
       });
+      _mapController.move(_center, _currentZoom);
       _loadStations(position.latitude, position.longitude);
     } catch (e) {
-      _loadStations(6.9271, 79.8612);
+      _loadStations(_center.latitude, _center.longitude);
     }
   }
 
@@ -62,155 +69,112 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  List<ChargingStation> _getFilteredStations() {
+    if (_selectedFilter == 'Fast Charging') {
+      return _stations.where((s) => s.isFastCharging).toList();
+    } else if (_selectedFilter == 'Green') {
+      return _stations.where((s) => s.energyType == 'Green Energy').toList();
+    } else {
+      return _stations.where((s) => s.isAvailable).toList();
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+
+    setState(() {
+      _isSearching = true;
+      _selectedStation = null;
+    });
+
+    try {
+      // First, try to find a station by name in the current list
+      ChargingStation? matchingStation;
+      try {
+        matchingStation = _stations.firstWhere(
+          (station) => station.name.toLowerCase().contains(query.toLowerCase()),
+        );
+      } catch (e) {
+        // No matching station found
+        matchingStation = null;
+      }
+
+      if (matchingStation != null) {
+        // Found a station, center map on it
+        final stationLocation = LatLng(matchingStation.latitude, matchingStation.longitude);
+        setState(() {
+          _center = stationLocation;
+          _selectedStation = matchingStation;
+        });
+        _mapController.move(stationLocation, _currentZoom);
+        setState(() {
+          _isSearching = false;
+        });
+        return;
+      }
+
+      // If no station found, try geocoding the location
+      final location = await _geocodingService.geocodeLocation(query);
+      
+      if (location != null) {
+        // Found location, center map and load stations
+        setState(() {
+          _center = location;
+        });
+        _mapController.move(location, _currentZoom);
+        await _loadStations(location.latitude, location.longitude);
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location not found. Please try a different search.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Search error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
-    _mapController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Set<Marker> _buildMarkers() {
-    List<ChargingStation> filteredStations = _stations;
-    
-    // Apply filter
-    if (_selectedFilter == 'Fast Charging') {
-      filteredStations = _stations.where((s) => s.isFastCharging).toList();
-    } else if (_selectedFilter == 'Green') {
-      filteredStations = _stations.where((s) => s.energyType == 'Green Energy').toList();
-    } else {
-      filteredStations = _stations.where((s) => s.isAvailable).toList();
-    }
-    
-    return filteredStations.map((station) {
-      return Marker(
-        markerId: MarkerId(station.id),
-        position: LatLng(station.latitude, station.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        onTap: () {
-          setState(() {
-            _selectedStation = station;
-          });
-        },
-      );
-    }).toSet();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final defaultLat = _currentPosition?.latitude ?? 6.9271;
-    final defaultLng = _currentPosition?.longitude ?? 79.8612;
+    final filteredStations = _getFilteredStations();
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A2B3A),
       body: Stack(
         children: [
-          // Map or Error Message
-          if (_mapError != null)
-            Center(
-              child: Container(
-                margin: const EdgeInsets.all(32),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A3B4A),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Map Error',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _mapError!,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'To fix this:',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '1. Get a Google Maps API key from Google Cloud Console',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            '2. For Android: Add it to android/app/src/main/AndroidManifest.xml',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            '3. For iOS: Add it to ios/Runner/Info.plist',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            '4. Replace YOUR_GOOGLE_MAPS_API_KEY with your actual key',
-                            style: TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _mapError = null;
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A8FF7),
-                      ),
-                      child: const Text('Retry', style: TextStyle(color: Colors.white)),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: LatLng(defaultLat, defaultLng),
-                zoom: 14,
-              ),
-            onMapCreated: (GoogleMapController controller) {
-              _mapController = controller;
-            },
-            style: _darkMapStyle,
-              onCameraMoveStarted: () {
-                // Clear any previous errors
-                if (_mapError != null) {
-                  setState(() {
-                    _mapError = null;
-                  });
-                }
-              },
-              markers: _buildMarkers(),
-              mapType: MapType.normal,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              onTap: (LatLng position) {
+          // Map
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _center,
+              initialZoom: _currentZoom,
+              onTap: (tapPosition, point) {
                 // Clear selected station when tapping map
                 if (_selectedStation != null) {
                   setState(() {
@@ -218,7 +182,72 @@ class _HomeScreenState extends State<HomeScreen> {
                   });
                 }
               },
+              onMapEvent: (mapEvent) {
+                // Update zoom and center when map moves
+                if (mapEvent is MapEventMoveEnd) {
+                  setState(() {
+                    _currentZoom = _mapController.camera.zoom;
+                    _center = _mapController.camera.center;
+                  });
+                }
+              },
             ),
+            children: [
+              // Tile Layer - Using OpenStreetMap (free, no API key needed)
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.evfinder',
+                tileProvider: NetworkTileProvider(),
+              ),
+              // Markers Layer
+              MarkerLayer(
+                markers: filteredStations.map((station) {
+                  return Marker(
+                    point: LatLng(station.latitude, station.longitude),
+                    width: 40,
+                    height: 40,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedStation = station;
+                        });
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.ev_station,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              // User Location Marker
+              if (_currentPosition != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                      width: 30,
+                      height: 30,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
           // Search Bar and Filters
           Positioned(
             top: 0,
@@ -240,16 +269,43 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: TextField(
                               controller: _searchController,
                               style: const TextStyle(color: Colors.white),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 hintText: 'Search Location or Station',
-                                hintStyle: TextStyle(color: Colors.white70),
-                                prefixIcon: Icon(Icons.search, color: Colors.white),
+                                hintStyle: const TextStyle(color: Colors.white70),
+                                prefixIcon: _isSearching
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: Padding(
+                                          padding: EdgeInsets.all(12.0),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        ),
+                                      )
+                                    : const Icon(Icons.search, color: Colors.white),
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, color: Colors.white, size: 20),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() {});
+                                        },
+                                      )
+                                    : null,
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(
+                                contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 12,
                                 ),
                               ),
+                              onSubmitted: (value) {
+                                _performSearch(value);
+                              },
+                              onChanged: (value) {
+                                setState(() {});
+                              },
                             ),
                           ),
                         ),
@@ -262,34 +318,62 @@ class _HomeScreenState extends State<HomeScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: IconButton(
-                            icon: const Icon(Icons.filter_list, color: Colors.white),
-                            onPressed: () {},
+                            icon: Icon(
+                              _showFilters ? Icons.filter_list : Icons.filter_list_off,
+                              color: Colors.white,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showFilters = !_showFilters;
+                              });
+                            },
                           ),
                         ),
+                        if (_searchController.text.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8.0),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4A8FF7),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: IconButton(
+                                icon: const Icon(Icons.search, color: Colors.white),
+                                onPressed: () {
+                                  _performSearch(_searchController.text);
+                                },
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  // Filter Buttons
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Row(
-                      children: [
-                        _buildFilterButton('Available', true, Colors.green),
-                        const SizedBox(width: 8),
-                        _buildFilterButton('Fast Charging', false, const Color(0xFF4A8FF7), icon: Icons.timer),
-                        const SizedBox(width: 8),
-                        _buildFilterButton('Green', false, const Color(0xFF4A8FF7), icon: Icons.eco),
-                      ],
+                  // Filter Buttons - Show/Hide based on _showFilters
+                  if (_showFilters)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        children: [
+                          _buildFilterButton('Available', _selectedFilter == 'Available', Colors.green),
+                          const SizedBox(width: 8),
+                          _buildFilterButton('Fast Charging', _selectedFilter == 'Fast Charging', const Color(0xFF4A8FF7), icon: Icons.timer),
+                          const SizedBox(width: 8),
+                          _buildFilterButton('Green', _selectedFilter == 'Green', const Color(0xFF4A8FF7), icon: Icons.eco),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
-          // Charging Availability Badge
+          // Charging Availability Badge - Moves up/down based on filter visibility
           if (_stations.isNotEmpty)
-            Positioned(
-              top: 140,
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              top: _showFilters ? 140 : 90, // Moves up when filters hidden, down when shown
               left: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -303,7 +387,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Icon(Icons.ev_station, color: Colors.white, size: 16),
                     const SizedBox(width: 6),
                     Text(
-                      '${_stations.first.availableSlots}/${_stations.first.totalSlots}',
+                      '${filteredStations.length} stations',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -449,7 +533,15 @@ class _HomeScreenState extends State<HomeScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  // Handle booking
+                  Navigator.pushNamed(
+                    context,
+                    '/booking-details',
+                    arguments: {
+                      'stationName': station.name,
+                      'address': station.address,
+                      'pricePerKwh': station.pricePerKwh,
+                    },
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A8FF7),
@@ -539,32 +631,4 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // Dark map style
-  static const String _darkMapStyle = '''
-  [
-    {
-      "elementType": "geometry",
-      "stylers": [{"color": "#1a2b3a"}]
-    },
-    {
-      "elementType": "labels.text.fill",
-      "stylers": [{"color": "#ffffff"}]
-    },
-    {
-      "elementType": "labels.text.stroke",
-      "stylers": [{"color": "#1a2b3a"}]
-    },
-    {
-      "featureType": "road",
-      "elementType": "geometry",
-      "stylers": [{"color": "#2a3b4a"}]
-    },
-    {
-      "featureType": "road",
-      "elementType": "labels.text.fill",
-      "stylers": [{"color": "#ffffff"}]
-    }
-  ]
-  ''';
 }

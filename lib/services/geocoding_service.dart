@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -30,9 +31,10 @@ class GeocodingService {
       }
       return null;
     } catch (e) {
-      print('Geocoding error: $e');
+      debugPrint('Geocoding error: $e');
       return null;
     }
   }
 }
+
 

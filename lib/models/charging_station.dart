@@ -12,6 +12,9 @@ class ChargingStation {
   final bool isFastCharging;
   final bool isAvailable;
   final String? imageUrl;
+  final double powerKw; // max charger power in kW
+  final bool isP2P;
+  final String? ownerAddress; // wallet address of P2P station owner
 
   ChargingStation({
     required this.id,
@@ -27,70 +30,71 @@ class ChargingStation {
     required this.isFastCharging,
     required this.isAvailable,
     this.imageUrl,
+    this.powerKw = 0,
+    this.isP2P = false,
+    this.ownerAddress,
   });
 
+  String get speedCategory {
+    if (powerKw >= 50) return 'Fast';
+    if (powerKw >= 22) return 'Medium';
+    return 'Slow';
+  }
+
   factory ChargingStation.fromJson(Map<String, dynamic> json) {
-    // Open Charge Map API structure
     final addressInfo = json['AddressInfo'] as Map<String, dynamic>? ?? {};
     final connections = json['Connections'] as List<dynamic>? ?? [];
-    
-    // Calculate distance in miles (API returns in KM)
+
     final distanceKm = (json['Distance'] ?? 0.0).toDouble();
     final distanceMiles = distanceKm * 0.621371;
-    
-    // Determine if fast charging (check connection types)
+
     bool isFast = false;
+    double maxPower = 0;
     if (connections.isNotEmpty) {
       for (var conn in connections) {
-        final powerKw = (conn['PowerKW'] ?? 0).toDouble();
-        if (powerKw >= 50) {
-          isFast = true;
-          break;
-        }
+        final pw = (conn['PowerKW'] ?? 0).toDouble();
+        if (pw > maxPower) maxPower = pw;
+        if (pw >= 50) isFast = true;
       }
     }
-    
-    // Check for green energy (solar/wind indicators)
+
     String energyType = 'Standard';
     final generalComments = (json['GeneralComments'] ?? '').toString().toLowerCase();
-    if (generalComments.contains('solar') || 
-        generalComments.contains('green') || 
+    if (generalComments.contains('solar') ||
+        generalComments.contains('green') ||
         generalComments.contains('renewable')) {
       energyType = 'Green Energy';
     }
-    
-    // Get number of charging points
+
     final numberOfPoints = json['NumberOfPoints'] ?? connections.length ?? 1;
-    
-    // Get usage cost if available
+
     final usageCost = json['UsageCost'] ?? '';
-    double pricePerKwh = 0.25; // Default
+    double pricePerKwh = 0.25;
     if (usageCost.toString().isNotEmpty) {
-      // Try to extract price from usage cost string
       final costMatch = RegExp(r'[\d.]+').firstMatch(usageCost.toString());
       if (costMatch != null) {
         pricePerKwh = double.tryParse(costMatch.group(0) ?? '0.25') ?? 0.25;
       }
     }
-    
+
     return ChargingStation(
       id: json['ID']?.toString() ?? json['id']?.toString() ?? '',
       name: addressInfo['Title'] ?? json['Name'] ?? 'Unknown Station',
       latitude: (addressInfo['Latitude'] ?? 0.0).toDouble(),
       longitude: (addressInfo['Longitude'] ?? 0.0).toDouble(),
-      address: addressInfo['AddressLine1'] ?? 
-               addressInfo['Town'] ?? 
-               addressInfo['StateOrProvince'] ?? 
+      address: addressInfo['AddressLine1'] ??
+               addressInfo['Town'] ??
+               addressInfo['StateOrProvince'] ??
                'Unknown Address',
       distance: distanceMiles,
       energyType: energyType,
       pricePerKwh: pricePerKwh,
-      availableSlots: numberOfPoints > 0 ? numberOfPoints - 1 : numberOfPoints, // Estimate available
+      availableSlots: numberOfPoints > 0 ? numberOfPoints - 1 : numberOfPoints,
       totalSlots: numberOfPoints,
       isFastCharging: isFast,
-      isAvailable: true, // Assume available unless status indicates otherwise
+      isAvailable: true,
       imageUrl: json['MediaItems']?[0]?['ItemURL'] ?? json['imageUrl'],
+      powerKw: maxPower,
     );
   }
 }
-

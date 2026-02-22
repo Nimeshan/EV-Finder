@@ -1,45 +1,76 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/charging_station.dart';
+import 'p2p_station_service.dart';
 
 class ChargingStationService {
-  // Using Open Charge Map API (free and open source)
+  static const String demoModeKey = 'demo_mode';
   static const String baseUrl = 'https://api.openchargemap.io/v3/poi';
   static const String apiKey = '667483b3-7855-46a3-a3cf-8593b5e70a48';
-  
+  final P2PStationService _p2pService = P2PStationService();
+
+  /// Simulation / testing: when true, map uses only mock stations (no API call).
+  static Future<bool> isDemoMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(demoModeKey) ?? false;
+  }
+
+  static Future<void> setDemoMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(demoModeKey, value);
+  }
+
   Future<List<ChargingStation>> getNearbyStations(
     double latitude,
+    double longitude, {
+    double radiusKm = 10,
+  }) async {
+    if (await isDemoMode()) {
+      return _getMockStations(latitude, longitude);
+    }
+    final results = await Future.wait([
+      _fetchFromOpenChargeMap(latitude, longitude, radiusKm),
+      _p2pService.getStationsForMap(latitude, longitude),
+    ]);
+    final apiStations = results[0];
+    final p2pStations = results[1];
+    final allStations = [...apiStations, ...p2pStations];
+    allStations.sort((a, b) => a.distance.compareTo(b.distance));
+    return allStations;
+  }
+
+  Future<List<ChargingStation>> _fetchFromOpenChargeMap(
+    double latitude,
     double longitude,
-    {double radiusKm = 10}
+    double radiusKm,
   ) async {
     try {
-      // Fetch from Open Charge Map API
       final url = Uri.parse(
-        '$baseUrl/?key=$apiKey&output=json&latitude=$latitude&longitude=$longitude&distance=$radiusKm&distanceunit=KM&maxresults=20&compact=true&verbose=false'
+        '$baseUrl/?key=$apiKey&output=json&latitude=$latitude&longitude=$longitude&distance=$radiusKm&distanceunit=KM&maxresults=20&compact=true&verbose=false',
       );
-      
+
       final response = await http.get(url);
-      
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         if (data.isNotEmpty) {
-          final stations = data.map((json) => ChargingStation.fromJson(json)).toList();
-          // Sort by distance (closest first)
+          final stations = data
+              .map((json) => ChargingStation.fromJson(json))
+              .toList();
           stations.sort((a, b) => a.distance.compareTo(b.distance));
           return stations;
         } else {
-          // If no results, return mock data for demonstration
-          print('No stations found in area, using mock data');
+          debugPrint('No stations found in area, using mock data');
           return _getMockStations(latitude, longitude);
         }
       } else {
-        // Fallback to mock data if API fails
-        print('API Error: ${response.statusCode} - ${response.body}');
+        debugPrint('API Error: ${response.statusCode} - ${response.body}');
         return _getMockStations(latitude, longitude);
       }
     } catch (e) {
-      // Return mock data on error
-      print('Error fetching stations: $e');
+      debugPrint('Error fetching stations: $e');
       return _getMockStations(latitude, longitude);
     }
   }
@@ -60,6 +91,7 @@ class ChargingStationService {
         totalSlots: 12,
         isFastCharging: true,
         isAvailable: true,
+        powerKw: 150,
       ),
       ChargingStation(
         id: '2',
@@ -74,6 +106,7 @@ class ChargingStationService {
         totalSlots: 8,
         isFastCharging: false,
         isAvailable: true,
+        powerKw: 7,
       ),
       ChargingStation(
         id: '3',
@@ -88,6 +121,7 @@ class ChargingStationService {
         totalSlots: 10,
         isFastCharging: true,
         isAvailable: true,
+        powerKw: 50,
       ),
       ChargingStation(
         id: '4',
@@ -102,8 +136,8 @@ class ChargingStationService {
         totalSlots: 6,
         isFastCharging: true,
         isAvailable: true,
+        powerKw: 100,
       ),
     ];
   }
 }
-

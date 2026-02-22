@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/charging_station.dart';
 import '../services/charging_station_service.dart';
 import '../services/geocoding_service.dart';
+import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,17 +21,39 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ChargingStation> _stations = [];
   ChargingStation? _selectedStation;
   Position? _currentPosition;
-  String _selectedFilter = 'Available';
   final TextEditingController _searchController = TextEditingController();
   double _currentZoom = 14.0;
-  LatLng _center = const LatLng(6.9271, 79.8612); // Default to Colombo, Sri Lanka
+  LatLng _center = const LatLng(6.9271, 79.8612);
   bool _isSearching = false;
-  bool _showFilters = true; // Initially show filters
+  bool _isLoadingStations = true;
+  final bool _showFilters = true;
+
+  // Filter state
+  bool _filterAvailable = true;
+  bool _filterFastCharging = false;
+  bool _filterGreenEnergy = false;
+  bool _filterP2P = false;
+  RangeValues _priceRange = const RangeValues(0.0, 1.00);
+  Set<String> _selectedSpeeds = {'Fast', 'Medium', 'Slow'};
+  String _sortBy = 'distance'; // 'distance' or 'price'
+  int _activeFilterCount = 0;
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+  }
+
+  void _updateActiveFilterCount() {
+    int count = 0;
+    if (_filterAvailable) count++;
+    if (_filterFastCharging) count++;
+    if (_filterGreenEnergy) count++;
+    if (_filterP2P) count++;
+    if (_priceRange.start > 0.0 || _priceRange.end < 1.00) count++;
+    if (_selectedSpeeds.length < 3) count++;
+    if (_sortBy != 'distance') count++;
+    _activeFilterCount = count;
   }
 
   Future<void> _getCurrentLocation() async {
@@ -63,20 +86,49 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadStations(double lat, double lng) async {
-    final stations = await _stationService.getNearbyStations(lat, lng);
     setState(() {
-      _stations = stations;
+      _isLoadingStations = true;
     });
+    final stations = await _stationService.getNearbyStations(lat, lng);
+    if (mounted) {
+      setState(() {
+        _stations = stations;
+        _isLoadingStations = false;
+      });
+    }
   }
 
   List<ChargingStation> _getFilteredStations() {
-    if (_selectedFilter == 'Fast Charging') {
-      return _stations.where((s) => s.isFastCharging).toList();
-    } else if (_selectedFilter == 'Green') {
-      return _stations.where((s) => s.energyType == 'Green Energy').toList();
+    var filtered = _stations.where((s) {
+      // Availability filter
+      if (_filterAvailable && !s.isAvailable) return false;
+
+      // Fast charging filter
+      if (_filterFastCharging && !s.isFastCharging) return false;
+
+      // Green energy filter
+      if (_filterGreenEnergy && s.energyType != 'Green Energy') return false;
+
+      // P2P filter
+      if (_filterP2P && !s.isP2P) return false;
+
+      // Price range filter
+      if (s.pricePerKwh < _priceRange.start || s.pricePerKwh > _priceRange.end) return false;
+
+      // Speed filter
+      if (!_selectedSpeeds.contains(s.speedCategory)) return false;
+
+      return true;
+    }).toList();
+
+    // Sort
+    if (_sortBy == 'price') {
+      filtered.sort((a, b) => a.pricePerKwh.compareTo(b.pricePerKwh));
     } else {
-      return _stations.where((s) => s.isAvailable).toList();
+      filtered.sort((a, b) => a.distance.compareTo(b.distance));
     }
+
+    return filtered;
   }
 
   Future<void> _performSearch(String query) async {
@@ -88,19 +140,16 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // First, try to find a station by name in the current list
       ChargingStation? matchingStation;
       try {
         matchingStation = _stations.firstWhere(
           (station) => station.name.toLowerCase().contains(query.toLowerCase()),
         );
       } catch (e) {
-        // No matching station found
         matchingStation = null;
       }
 
       if (matchingStation != null) {
-        // Found a station, center map on it
         final stationLocation = LatLng(matchingStation.latitude, matchingStation.longitude);
         setState(() {
           _center = stationLocation;
@@ -113,18 +162,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // If no station found, try geocoding the location
       final location = await _geocodingService.geocodeLocation(query);
-      
+
       if (location != null) {
-        // Found location, center map and load stations
         setState(() {
           _center = location;
         });
         _mapController.move(location, _currentZoom);
         await _loadStations(location.latitude, location.longitude);
       } else {
-        // Show error message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -154,6 +200,208 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Color _getMarkerColor(ChargingStation station) {
+    if (!station.isAvailable) return Colors.red;
+    final ratio = station.availableSlots / station.totalSlots;
+    if (ratio <= 0.2) return Colors.orange;
+    return AppColors.green;
+  }
+
+  void _showFilterSheet() {
+    // Local copies for the sheet
+    bool tempAvailable = _filterAvailable;
+    bool tempFast = _filterFastCharging;
+    bool tempGreen = _filterGreenEnergy;
+    RangeValues tempPrice = _priceRange;
+    Set<String> tempSpeeds = Set.from(_selectedSpeeds);
+    String tempSort = _sortBy;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.background,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Filters',
+                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setSheetState(() {
+                            tempAvailable = true;
+                            tempFast = false;
+                            tempGreen = false;
+                            tempPrice = const RangeValues(0.0, 1.00);
+                            tempSpeeds = {'Fast', 'Medium', 'Slow'};
+                            tempSort = 'distance';
+                          });
+                        },
+                        child: const Text('Reset', style: TextStyle(color: AppColors.primaryBlue)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Quick toggles
+                  const Text('QUICK FILTERS', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _filterChip('Available', tempAvailable, (v) => setSheetState(() => tempAvailable = v)),
+                      _filterChip('Fast Charging', tempFast, (v) => setSheetState(() => tempFast = v)),
+                      _filterChip('Green Energy', tempGreen, (v) => setSheetState(() => tempGreen = v)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Price range
+                  Text(
+                    'PRICE RANGE (\$${tempPrice.start.toStringAsFixed(2)} - \$${tempPrice.end.toStringAsFixed(2)}/kWh)',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1),
+                  ),
+                  RangeSlider(
+                    values: tempPrice,
+                    min: 0.0,
+                    max: 1.00,
+                    divisions: 20,
+                    activeColor: AppColors.primaryBlue,
+                    inactiveColor: Colors.white24,
+                    labels: RangeLabels(
+                      '\$${tempPrice.start.toStringAsFixed(2)}',
+                      '\$${tempPrice.end.toStringAsFixed(2)}',
+                    ),
+                    onChanged: (values) {
+                      setSheetState(() => tempPrice = values);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Charging speed
+                  const Text('CHARGING SPEED', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _filterChip('Fast (50+ kW)', tempSpeeds.contains('Fast'), (v) {
+                        setSheetState(() {
+                          if (v) { tempSpeeds.add('Fast'); } else { tempSpeeds.remove('Fast'); }
+                        });
+                      }),
+                      _filterChip('Medium (22-49 kW)', tempSpeeds.contains('Medium'), (v) {
+                        setSheetState(() {
+                          if (v) { tempSpeeds.add('Medium'); } else { tempSpeeds.remove('Medium'); }
+                        });
+                      }),
+                      _filterChip('Slow (<22 kW)', tempSpeeds.contains('Slow'), (v) {
+                        setSheetState(() {
+                          if (v) { tempSpeeds.add('Slow'); } else { tempSpeeds.remove('Slow'); }
+                        });
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Sort by
+                  const Text('SORT BY', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setSheetState(() => tempSort = 'distance'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: tempSort == 'distance' ? AppColors.primaryBlue : AppColors.cardBackground,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: Text('Distance', style: TextStyle(color: Colors.white, fontSize: 14)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setSheetState(() => tempSort = 'price'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: tempSort == 'price' ? AppColors.primaryBlue : AppColors.cardBackground,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: Text('Price (Low→High)', style: TextStyle(color: Colors.white, fontSize: 14)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Apply button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _filterAvailable = tempAvailable;
+                          _filterFastCharging = tempFast;
+                          _filterGreenEnergy = tempGreen;
+                          _priceRange = tempPrice;
+                          _selectedSpeeds = tempSpeeds;
+                          _sortBy = tempSort;
+                          _updateActiveFilterCount();
+                        });
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Apply Filters', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _filterChip(String label, bool selected, ValueChanged<bool> onChanged) {
+    return FilterChip(
+      label: Text(label, style: TextStyle(color: selected ? Colors.white : Colors.white70, fontSize: 12)),
+      selected: selected,
+      onSelected: onChanged,
+      selectedColor: AppColors.primaryBlue,
+      backgroundColor: AppColors.cardBackground,
+      checkmarkColor: Colors.white,
+      side: BorderSide.none,
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -165,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final filteredStations = _getFilteredStations();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A2B3A),
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           // Map
@@ -175,7 +423,6 @@ class _HomeScreenState extends State<HomeScreen> {
               initialCenter: _center,
               initialZoom: _currentZoom,
               onTap: (tapPosition, point) {
-                // Clear selected station when tapping map
                 if (_selectedStation != null) {
                   setState(() {
                     _selectedStation = null;
@@ -183,7 +430,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               onMapEvent: (mapEvent) {
-                // Update zoom and center when map moves
                 if (mapEvent is MapEventMoveEnd) {
                   setState(() {
                     _currentZoom = _mapController.camera.zoom;
@@ -193,15 +439,16 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             children: [
-              // Tile Layer - Using OpenStreetMap (free, no API key needed)
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.evfinder',
                 tileProvider: NetworkTileProvider(),
               ),
-              // Markers Layer
               MarkerLayer(
                 markers: filteredStations.map((station) {
+                  final isP2P = station.isP2P;
+                  final markerColor = isP2P ? const Color(0xFF9C27B0) : _getMarkerColor(station);
+                  final markerIcon = isP2P ? Icons.home : Icons.ev_station;
                   return Marker(
                     point: LatLng(station.latitude, station.longitude),
                     width: 40,
@@ -214,21 +461,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.green,
+                          color: markerColor,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Icon(
-                          Icons.ev_station,
-                          color: Colors.white,
-                          size: 24,
-                        ),
+                        child: Icon(markerIcon, color: Colors.white, size: 24),
                       ),
                     ),
                   );
                 }).toList(),
               ),
-              // User Location Marker
               if (_currentPosition != null)
                 MarkerLayer(
                   markers: [
@@ -248,6 +490,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
+          // Loading overlay
+          if (_isLoadingStations)
+            Positioned(
+              top: _showFilters ? 140 : 90,
+              left: 0,
+              right: 0,
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.green),
+                ),
+              ),
+            ),
           // Search Bar and Filters
           Positioned(
             top: 0,
@@ -263,7 +517,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4A8FF7),
+                              color: AppColors.searchBar,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: TextField(
@@ -295,39 +549,49 @@ class _HomeScreenState extends State<HomeScreen> {
                                       )
                                     : null,
                                 border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               ),
-                              onSubmitted: (value) {
-                                _performSearch(value);
-                              },
-                              onChanged: (value) {
-                                setState(() {});
-                              },
+                              onSubmitted: (value) => _performSearch(value),
+                              onChanged: (value) => setState(() {}),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2A3B4A),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              _showFilters ? Icons.filter_list : Icons.filter_list_off,
-                              color: Colors.white,
+                        // Filter button with badge
+                        Stack(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: AppColors.filterInactive,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: IconButton(
+                                icon: const Icon(Icons.tune, color: Colors.white),
+                                onPressed: _showFilterSheet,
+                              ),
                             ),
-                            onPressed: () {
-                              setState(() {
-                                _showFilters = !_showFilters;
-                              });
-                            },
-                          ),
+                            if (_activeFilterCount > 0)
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '$_activeFilterCount',
+                                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                         if (_searchController.text.isNotEmpty)
                           Padding(
@@ -336,49 +600,73 @@ class _HomeScreenState extends State<HomeScreen> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF4A8FF7),
+                                color: AppColors.primaryBlue,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: IconButton(
                                 icon: const Icon(Icons.search, color: Colors.white),
-                                onPressed: () {
-                                  _performSearch(_searchController.text);
-                                },
+                                onPressed: () => _performSearch(_searchController.text),
                               ),
                             ),
                           ),
                       ],
                     ),
                   ),
-                  // Filter Buttons - Show/Hide based on _showFilters
+                  // Quick filter chips
                   if (_showFilters)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Row(
-                        children: [
-                          _buildFilterButton('Available', _selectedFilter == 'Available', Colors.green),
-                          const SizedBox(width: 8),
-                          _buildFilterButton('Fast Charging', _selectedFilter == 'Fast Charging', const Color(0xFF4A8FF7), icon: Icons.timer),
-                          const SizedBox(width: 8),
-                          _buildFilterButton('Green', _selectedFilter == 'Green', const Color(0xFF4A8FF7), icon: Icons.eco),
-                        ],
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildQuickChip('Available', _filterAvailable, AppColors.green, () {
+                              setState(() { _filterAvailable = !_filterAvailable; _updateActiveFilterCount(); });
+                            }),
+                            const SizedBox(width: 8),
+                            _buildQuickChip('Fast', _filterFastCharging, AppColors.primaryBlue, () {
+                              setState(() { _filterFastCharging = !_filterFastCharging; _updateActiveFilterCount(); });
+                            }, icon: Icons.bolt),
+                            const SizedBox(width: 8),
+                            _buildQuickChip('Green', _filterGreenEnergy, AppColors.primaryBlue, () {
+                              setState(() { _filterGreenEnergy = !_filterGreenEnergy; _updateActiveFilterCount(); });
+                            }, icon: Icons.eco),
+                            const SizedBox(width: 8),
+                            _buildQuickChip('P2P', _filterP2P, const Color(0xFF9C27B0), () {
+                              setState(() { _filterP2P = !_filterP2P; _updateActiveFilterCount(); });
+                            }, icon: Icons.people),
+                            const SizedBox(width: 8),
+                            _buildQuickChip(
+                              _sortBy == 'price' ? 'Price ↑' : 'Distance ↑',
+                              _sortBy == 'price',
+                              AppColors.primaryBlue,
+                              () {
+                                setState(() {
+                                  _sortBy = _sortBy == 'distance' ? 'price' : 'distance';
+                                  _updateActiveFilterCount();
+                                });
+                              },
+                              icon: Icons.sort,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
           ),
-          // Charging Availability Badge - Moves up/down based on filter visibility
-          if (_stations.isNotEmpty)
+          // Charging Availability Badge
+          if (_stations.isNotEmpty && !_isLoadingStations)
             AnimatedPositioned(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
-              top: _showFilters ? 140 : 90, // Moves up when filters hidden, down when shown
+              top: _showFilters ? 140 : 90,
               left: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.green,
+                  color: AppColors.green,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -388,60 +676,66 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 6),
                     Text(
                       '${filteredStations.length} stations',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
               ),
             ),
+          // List Charger FAB
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: FloatingActionButton.extended(
+              heroTag: 'listCharger',
+              backgroundColor: const Color(0xFF9C27B0),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: const Text('List Charger', style: TextStyle(color: Colors.white)),
+              onPressed: () => Navigator.pushNamed(context, '/list-station'),
+            ),
+          ),
+          // Refresh button
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: FloatingActionButton.small(
+              heroTag: 'refresh',
+              backgroundColor: AppColors.primaryBlue,
+              onPressed: () => _loadStations(_center.latitude, _center.longitude),
+              child: const Icon(Icons.refresh, color: Colors.white),
+            ),
+          ),
           // Station Detail Card
           if (_selectedStation != null)
             Positioned(
-              bottom: 80,
+              bottom: 16,
               left: 0,
               right: 0,
               child: _buildStationCard(_selectedStation!),
             ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(context, 0),
     );
   }
 
-  Widget _buildFilterButton(String label, bool isSelected, Color color, {IconData? icon}) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedFilter = label;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? color : const Color(0xFF2A3B4A),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: Colors.white, size: 16),
-                const SizedBox(width: 6),
-              ],
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                ),
-              ),
+  Widget _buildQuickChip(String label, bool isSelected, Color activeColor, VoidCallback onTap, {IconData? icon}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor : AppColors.filterInactive,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: Colors.white, size: 14),
+              const SizedBox(width: 4),
             ],
-          ),
+            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12)),
+          ],
         ),
       ),
     );
@@ -458,7 +752,7 @@ class _HomeScreenState extends State<HomeScreen> {
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF2A3B4A),
+          color: AppColors.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         ),
@@ -469,7 +763,6 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Station Image Placeholder
                 Container(
                   width: 80,
                   height: 80,
@@ -484,44 +777,75 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        station.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          if (station.isP2P)
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF9C27B0),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text('P2P', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          Expanded(
+                            child: Text(
+                              station.name,
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           const Icon(Icons.location_on, color: Colors.white, size: 14),
                           const SizedBox(width: 4),
+                          Text('${station.distance.toStringAsFixed(1)} Mi',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          const SizedBox(width: 12),
+                          const Icon(Icons.local_parking, color: Colors.white70, size: 14),
+                          const SizedBox(width: 4),
                           Text(
-                            '${station.distance.toStringAsFixed(1)} Mi',
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            '${station.availableSlots}/${station.totalSlots} slots',
+                            style: TextStyle(
+                              color: station.availableSlots > 0 ? AppColors.green : Colors.red,
+                              fontSize: 12,
+                            ),
                           ),
                           if (station.energyType == 'Green Energy') ...[
                             const SizedBox(width: 12),
                             const Icon(Icons.eco, color: Colors.green, size: 14),
-                            const SizedBox(width: 4),
-                            const Text(
-                              'Green Energy',
-                              style: TextStyle(color: Colors.green, fontSize: 12),
-                            ),
                           ],
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '\$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text('\$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
+                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                          if (station.powerKw > 0) ...[
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: station.speedCategory == 'Fast'
+                                    ? AppColors.primaryBlue
+                                    : station.speedCategory == 'Medium'
+                                        ? Colors.orange
+                                        : Colors.grey,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '${station.powerKw.toInt()} kW',
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -540,94 +864,31 @@ class _HomeScreenState extends State<HomeScreen> {
                       'stationName': station.name,
                       'address': station.address,
                       'pricePerKwh': station.pricePerKwh,
+                      'energyType': station.energyType,
+                      'stationId': station.id,
+                      'isP2P': station.isP2P,
+                      'ownerAddress': station.ownerAddress,
                     },
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A8FF7),
+                  backgroundColor: AppColors.primaryBlue,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.ev_station, color: Colors.white),
                     SizedBox(width: 8),
-                    Text(
-                      'Book Charging Slot',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    Text('Book Charging Slot',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavigationBar(BuildContext context, int currentIndex) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A2B3A),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/wallet');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/history');
-          } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/profile');
-          }
-        },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: const Color(0xFF1A2B3A),
-        selectedItemColor: const Color(0xFF4A9EFF),
-        unselectedItemColor: Colors.white,
-        selectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w400,
-        ),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map),
-            label: 'Map',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Wallet',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: 'History',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
       ),
     );
   }

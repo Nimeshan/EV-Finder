@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/web3_service.dart';
@@ -13,6 +16,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final Web3Service _web3Service = Web3Service();
   bool _isConnecting = false;
+  bool _connectingInApp = false; // true when using in-app wallet flow
   String? _errorMessage;
 
   @override
@@ -28,9 +32,48 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _connectInAppWallet() async {
+    setState(() {
+      _isConnecting = true;
+      _connectingInApp = true;
+      _errorMessage = null;
+    });
+    try {
+      final walletAddress = await _web3Service.connectInAppWallet();
+      if (!mounted) {
+        return;
+      }
+      final isRegistered = await _web3Service.isUserRegistered(walletAddress);
+      if (!isRegistered) {
+        _showRegistrationDialog(walletAddress);
+      } else {
+        final userInfo = await _web3Service.getUserInfo(walletAddress);
+        if (userInfo != null && userInfo['name'] != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_name', userInfo['name']);
+        }
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Could not create app wallet: ${e.toString().replaceAll('Exception: ', '')}';
+        });
+      }
+    } finally {
+      if (mounted) setState(() {
+        _isConnecting = false;
+        _connectingInApp = false;
+      });
+    }
+  }
+
   Future<void> _connectMetaMask() async {
     setState(() {
       _isConnecting = true;
+      _connectingInApp = false;
       _errorMessage = null;
     });
 
@@ -65,12 +108,16 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       String errorMsg = 'Error connecting to wallet';
 
-      if (e.toString().contains('MetaMask is not installed')) {
+      if (e is TimeoutException) {
+        errorMsg = 'Connection timed out. Open the MetaMask app, approve the connection, then tap Sign In again.';
+      } else if (e.toString().contains('MetaMask is not installed')) {
         errorMsg = 'MetaMask is not installed. Please install MetaMask extension or app.';
       } else if (e.toString().contains('User rejected')) {
         errorMsg = 'Connection rejected. Please approve the connection in MetaMask.';
       } else if (e.toString().contains('not loaded')) {
         errorMsg = 'MetaMask connector not loaded. Please refresh the page.';
+      } else if (e.toString().contains('timed out')) {
+        errorMsg = 'Connection timed out. Open MetaMask, approve the connection, then try again.';
       } else {
         errorMsg = 'Error: ${e.toString().replaceAll('Exception: ', '')}';
       }
@@ -248,12 +295,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                // Metamask Sign In Button
+                // In-app wallet: no MetaMask needed
                 ElevatedButton(
-                  onPressed: _isConnecting ? null : _connectMetaMask,
+                  onPressed: _isConnecting ? null : _connectInAppWallet,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
                       vertical: 16,
@@ -264,13 +311,54 @@ class _LoginScreenState extends State<LoginScreen> {
                     elevation: 0,
                     minimumSize: const Size(double.infinity, 56),
                   ),
-                  child: _isConnecting
+                  child: _isConnecting && _connectingInApp
                       ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'Continue with in-app wallet',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No MetaMask needed — wallet stays in the app',
+                  style: TextStyle(
+                    color: AppColors.subtleGray.withValues(alpha: 0.9),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // MetaMask Sign In Button
+                OutlinedButton(
+                  onPressed: _isConnecting ? null : _connectMetaMask,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    minimumSize: const Size(double.infinity, 56),
+                  ),
+                  child: _isConnecting && !_connectingInApp
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : Row(
@@ -280,10 +368,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               'assets/metamask.png',
                               width: 24,
                               height: 24,
+                              color: Colors.white,
                             ),
                             const SizedBox(width: 12),
                             const Text(
-                              'Sign In With Metamask',
+                              'Sign in with MetaMask',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -297,6 +386,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   'Connect to Sepolia Testnet',
                   style: TextStyle(color: AppColors.subtleGray, fontSize: 12),
                 ),
+                if (!kIsWeb) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'If the connection screen in MetaMask is blank or stuck, update MetaMask to the latest version and try again.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.subtleGray.withValues(alpha: 0.8),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

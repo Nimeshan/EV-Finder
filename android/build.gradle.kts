@@ -1,3 +1,5 @@
+apply(from = "subprojects_compile_sdk.gradle")
+
 allprojects {
     repositories {
         google()

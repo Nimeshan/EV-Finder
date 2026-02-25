@@ -50,5 +50,24 @@
 	<string>This app needs access to your location to find nearby EV charging stations.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>This app needs access to your location to find nearby EV charging stations.</string>
+	<!-- WalletConnect: allow linking to MetaMask and other wallets -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>metamask</string>
+		<string>trust</string>
+		<string>rainbow</string>
+	</array>
+	<!-- WalletConnect: handle return from wallet app -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>evfinder</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.example.evfinder</string>
+		</dict>
+	</array>
 </dict>
 </plist>

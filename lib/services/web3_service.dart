@@ -1,14 +1,24 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'package:convert/convert.dart' show hex;
+
 import 'package:http/http.dart' as http;
 import 'package:web3dart/web3dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
-import 'dart:js' as js;
+import 'package:flutter/foundation.dart' show debugPrint;
+
+// Platform-specific: web uses dart:js/MetaMask; mobile uses WalletConnect.
+import 'web3_js_bridge_web.dart'
+    if (dart.library.io) 'web3_js_bridge_stub.dart' as js_bridge;
+
+import 'wallet_connect_service.dart';
+import 'in_app_wallet_service.dart';
 
 class Web3Service {
   static const String sepoliaRpcUrl = 'https://rpc.sepolia.org';
   static const String goerliRpcUrl = 'https://rpc.ankr.com/eth_goerli';
   static const String mumbaiRpcUrl = 'https://rpc-mumbai.maticvigil.com';
+  static const int sepoliaChainId = 11155111;
   
   // Update this with your deployed contract address
   static const String contractAddress = 'YOUR_CONTRACT_ADDRESS_HERE';
@@ -423,71 +433,60 @@ class Web3Service {
     }
   }
 
-  // Connect to MetaMask
+  /// Create or get in-app wallet (no MetaMask needed). Returns address.
+  Future<String> connectInAppWallet() async {
+    await initialize(network: 'sepolia');
+    return InAppWalletService.instance.createOrGetInAppWallet();
+  }
+
+  /// True if the current saved wallet is the in-app one (no external wallet).
+  Future<bool> hasInAppWallet() async =>
+      InAppWalletService.instance.hasInAppWallet();
+
+  // Connect to MetaMask (web) or WalletConnect (mobile)
   Future<String?> connectWallet() async {
     try {
-      if (kIsWeb) {
-        // For web, use JavaScript interop to connect to MetaMask
+      if (js_bridge.Web3JsBridge.isAvailable) {
         return await _connectMetaMaskWeb();
-      } else {
-        // For mobile, we need a different approach
-        // For now, provide instructions or use a test mode
-        throw Exception(
-          'Mobile MetaMask connection requires additional setup. '
-          'For testing, please use the web version in a browser with MetaMask extension installed.'
-        );
       }
+      if (WalletConnectService.isAvailable) {
+        return await _connectWalletConnect();
+      }
+      throw UnsupportedError(
+        'Wallet connection is not available on this platform.',
+      );
     } catch (e) {
       debugPrint('Error connecting wallet: $e');
       rethrow; // Re-throw to show error to user
     }
   }
 
-  // Helper function to convert JavaScript Promise to Dart Future
-  // Since the js package doesn't have promiseToFuture, we use a workaround
-  Future<dynamic> _promiseToFuture(dynamic promise) async {
-    // The JavaScript functions return Promises, but we can't easily await them
-    // So we'll use a callback-based approach via JavaScript
-    final completer = Completer<dynamic>();
-    
+  Future<String?> _connectWalletConnect() async {
     try {
-      // Use JavaScript to handle the promise
-      js.context.callMethod('eval', [
-        '''
-        (function() {
-          var promise = arguments[0];
-          var resolve = arguments[1];
-          promise.then(function(value) {
-            resolve(value);
-          }).catch(function(error) {
-            resolve({success: false, error: error.message || error.toString()});
-          });
-        })
-        '''
-      ]).apply([promise, (value) {
-        if (!completer.isCompleted) {
-          completer.complete(value);
+      final address =
+          await WalletConnectService.instance.connect();
+      if (address != null) {
+        try {
+          await WalletConnectService.instance.switchToSepolia();
+        } catch (_) {
+          debugPrint('Switch to Sepolia warning (continuing anyway)');
         }
-      }]);
-      
-      return completer.future.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('MetaMask connection timed out. Please try again.');
-        },
-      );
+      }
+      return address;
     } catch (e) {
-      // Fallback: return promise as-is and hope it works
-      debugPrint('Warning: Could not properly convert promise: $e');
-      await Future.delayed(const Duration(milliseconds: 500));
-      return promise;
+      debugPrint('WalletConnect error: $e');
+      rethrow;
     }
+  }
+
+  Future<dynamic> _promiseToFuture(dynamic promise) async {
+    return js_bridge.Web3JsBridge.promiseToFuture(promise);
   }
 
   Future<String?> _connectMetaMaskWeb() async {
     try {
       // Check if MetaMask functions are available
-      if (!js.context.hasProperty('connectMetaMask')) {
+      if (!js_bridge.Web3JsBridge.hasConnectMetaMask()) {
         throw Exception(
           'MetaMask connector script not loaded.\n\n'
           'Troubleshooting:\n'
@@ -498,19 +497,15 @@ class Web3Service {
         );
       }
 
-      // Switch to Sepolia testnet first (try, but don't block on failure)
       try {
-        if (js.context.hasProperty('switchToSepolia')) {
-          // switchToSepolia returns a Promise, so we need to await it properly
-          final switchPromise = js.context.callMethod('switchToSepolia', []);
-          // Convert Promise to Future manually
-          final switchResult = await _promiseToFuture(switchPromise);
-          
+        if (js_bridge.Web3JsBridge.hasSwitchToSepolia()) {
+          final switchResult = await js_bridge.Web3JsBridge.switchToSepolia();
           if (switchResult != null) {
-            final switchResultObj = switchResult as js.JsObject;
-            final switchSuccess = switchResultObj['success'] as bool? ?? false;
+            final switchSuccess =
+                js_bridge.Web3JsBridge.getJsResultSuccess(switchResult);
             if (!switchSuccess) {
-              final switchError = switchResultObj['error'] as String?;
+              final switchError =
+                  js_bridge.Web3JsBridge.getJsResultError(switchResult);
               debugPrint('Warning: Could not switch to Sepolia: $switchError');
               debugPrint('Note: You can continue on your current network, but Sepolia is recommended.');
             } else {
@@ -525,12 +520,9 @@ class Web3Service {
         // Continue anyway - user might already be on the right network
       }
 
-      // Connect to MetaMask (this is async, so we need to await the Promise)
       dynamic result;
       try {
-        // connectMetaMask returns a Promise, so we need to convert it to a Future
-        final connectPromise = js.context.callMethod('connectMetaMask', []);
-        result = await _promiseToFuture(connectPromise);
+        result = await js_bridge.Web3JsBridge.connectMetaMask();
       } catch (e) {
         debugPrint('Error calling MetaMask connector: $e');
         throw Exception(
@@ -554,11 +546,10 @@ class Web3Service {
         );
       }
       
-      final jsResult = result as js.JsObject;
-      final success = jsResult['success'] as bool? ?? false;
-      
+      final success = js_bridge.Web3JsBridge.getJsResultSuccess(result);
       if (!success) {
-        final error = jsResult['error'] as String? ?? 'Unknown error';
+        final error =
+            js_bridge.Web3JsBridge.getJsResultError(result) ?? 'Unknown error';
         
         debugPrint('MetaMask connection error: $error');
         
@@ -603,8 +594,7 @@ class Web3Service {
         
         throw Exception(userMessage);
       }
-      
-      final address = jsResult['address'] as String?;
+      final address = js_bridge.Web3JsBridge.getJsResultAddress(result);
       if (address == null || address.isEmpty) {
         throw Exception(
           'MetaMask returned empty address.\n\n'
@@ -749,22 +739,32 @@ class Web3Service {
     await prefs.setString('wallet_address', address);
   }
 
-  // Get saved wallet address. On web, if storage is empty, try to recover from MetaMask (no popup).
+  // Get saved wallet address. In-app wallet first, then prefs, then MetaMask/WalletConnect.
   Future<String?> getSavedWalletAddress() async {
+    if (await InAppWalletService.instance.hasInAppWallet()) {
+      return InAppWalletService.instance.getInAppWalletAddress();
+    }
     final prefs = await SharedPreferences.getInstance();
     String? address = prefs.getString('wallet_address');
-    if ((address == null || address.isEmpty) && kIsWeb) {
-      try {
-        if (js.context.hasProperty('getMetaMaskAccount')) {
-          final promise = js.context.callMethod('getMetaMaskAccount', []);
-          final result = await _promiseToFuture(promise);
-          if (result != null && result is String && result.isNotEmpty) {
-            address = result;
-            await prefs.setString('wallet_address', address);
+    if (address == null || address.isEmpty) {
+      if (js_bridge.Web3JsBridge.isAvailable) {
+        try {
+          if (js_bridge.Web3JsBridge.hasGetMetaMaskAccount()) {
+            final recovered = await js_bridge.Web3JsBridge.getMetaMaskAccount();
+            if (recovered != null && recovered.isNotEmpty) {
+              address = recovered;
+              await prefs.setString('wallet_address', address);
+            }
           }
+        } catch (e) {
+          debugPrint('Could not recover wallet from MetaMask: $e');
         }
-      } catch (e) {
-        debugPrint('Could not recover wallet from MetaMask: $e');
+      } else if (WalletConnectService.isAvailable &&
+          WalletConnectService.instance.isConnected) {
+        address = WalletConnectService.instance.connectedAddress;
+        if (address != null && address.isNotEmpty) {
+          await prefs.setString('wallet_address', address);
+        }
       }
     }
     return address;
@@ -783,9 +783,44 @@ class Web3Service {
 
   // Clear active session (per-wallet registration data is preserved)
   Future<void> clearWallet() async {
+    if (await InAppWalletService.instance.hasInAppWallet()) {
+      await InAppWalletService.instance.deleteInAppWallet();
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('wallet_address');
     await prefs.remove('user_name');
+    await prefs.remove(InAppWalletService.keyWalletType);
+  }
+
+  /// Send a transaction using the in-app wallet (signed locally). Returns tx hash or null.
+  Future<String?> _sendWithInAppWallet({
+    required String toAddress,
+    required BigInt valueWei,
+    Uint8List? data,
+  }) async {
+    if (_client == null) return null;
+    final cred = await InAppWalletService.instance.getCredentials();
+    if (cred == null) return null;
+    try {
+      final tx = Transaction(
+        to: EthereumAddress.fromHex(toAddress),
+        value: EtherAmount.inWei(valueWei),
+        data: data,
+      );
+      return await _client!.sendTransaction(
+        cred,
+        tx,
+        chainId: sepoliaChainId,
+      );
+    } catch (e) {
+      debugPrint('In-app wallet send error: $e');
+      return null;
+    }
+  }
+
+  static Uint8List _hexToBytes(String hexStr) {
+    final s = hexStr.startsWith('0x') ? hexStr.substring(2) : hexStr;
+    return Uint8List.fromList(hex.decode(s));
   }
 
   // Get ETH balance for an address
@@ -809,7 +844,7 @@ class Web3Service {
     }
   }
 
-  // Send payment via MetaMask (web only)
+  // Send payment via in-app wallet, MetaMask (web), or WalletConnect (mobile)
   Future<String?> sendPayment({
     required String fromAddress,
     required String toAddress,
@@ -817,58 +852,54 @@ class Web3Service {
     String? data,
   }) async {
     try {
-      if (!kIsWeb) {
-        throw Exception('Payment processing is only available on web platform');
-      }
-
-      // Use MetaMask to send transaction
-      final amountInWei = (amountInEth * BigInt.from(1000000000000000000).toDouble()).toInt();
+      final amountInWei =
+          (amountInEth * BigInt.from(1000000000000000000).toDouble()).toInt();
       final amountHex = '0x${BigInt.from(amountInWei).toRadixString(16)}';
 
-      // Call JavaScript function to send transaction via MetaMask
-      if (!js.context.hasProperty('sendTransaction')) {
-        // Define the function if it doesn't exist
-        js.context.callMethod('eval', [
-          '''
-          window.sendTransaction = async function(from, to, amount) {
-            if (typeof window.ethereum === 'undefined') {
-              return {success: false, error: 'MetaMask not found'};
-            }
-            try {
-              const txHash = await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                  from: from,
-                  to: to,
-                  value: amount,
-                  gas: '0x5208', // 21000 gas
-                }]
-              });
-              return {success: true, txHash: txHash};
-            } catch (error) {
-              return {success: false, error: error.message || error.toString()};
-            }
-          };
-          '''
-        ]);
+      if (await InAppWalletService.instance.isInAppWallet(fromAddress)) {
+        final valueWei = BigInt.from(amountInWei);
+        final dataBytes = data != null && data.isNotEmpty
+            ? _hexToBytes(data)
+            : null;
+        return await _sendWithInAppWallet(
+          toAddress: toAddress,
+          valueWei: valueWei,
+          data: dataBytes,
+        );
       }
 
-      final result = js.context.callMethod('sendTransaction', [fromAddress, toAddress, amountHex]);
-      
-      if (result != null) {
-        final jsResult = result as js.JsObject;
-        final success = jsResult['success'] as bool? ?? false;
-        
-        if (success) {
-          final txHash = jsResult['txHash'] as String?;
-          return txHash;
-        } else {
-          final error = jsResult['error'] as String? ?? 'Unknown error';
-          throw Exception('Payment failed: $error');
+      if (WalletConnectService.isAvailable &&
+          WalletConnectService.instance.isConnected) {
+        final txHash = await WalletConnectService.instance.sendTransaction(
+          from: fromAddress,
+          to: toAddress,
+          valueHex: amountHex,
+          data: data,
+        );
+        return txHash;
+      }
+
+      if (js_bridge.Web3JsBridge.isAvailable) {
+        if (!js_bridge.Web3JsBridge.hasSendTransaction()) {
+          js_bridge.Web3JsBridge.defineSendTransaction();
+        }
+        final result = js_bridge.Web3JsBridge.sendTransaction(
+            fromAddress, toAddress, amountHex);
+        if (result != null) {
+          final promiseResult = await _promiseToFuture(result);
+          if (js_bridge.Web3JsBridge.getJsResultSuccess(promiseResult)) {
+            return js_bridge.Web3JsBridge.getJsResultTxHash(promiseResult);
+          } else {
+            final error =
+                js_bridge.Web3JsBridge.getJsResultError(promiseResult) ??
+                    'Unknown error';
+            throw Exception('Payment failed: $error');
+          }
         }
       }
-      
-      throw Exception('Payment failed: No response from MetaMask');
+
+      throw Exception(
+          'Connect your wallet first. On mobile, use MetaMask via WalletConnect.');
     } catch (e) {
       debugPrint('Error sending payment: $e');
       rethrow;
@@ -925,12 +956,6 @@ class Web3Service {
       // e.g., $12.11 = 1211
       final amountScaled = BigInt.from((amount.abs() * 100).round());
 
-      // Use MetaMask to sign and send transaction
-      if (!kIsWeb) {
-        throw Exception('Transaction recording is only available on web platform');
-      }
-
-      // Encode the function call
       final recordFunction = _contract!.function('recordTransaction');
       final functionCall = recordFunction.encodeCall([
         stationName,
@@ -939,73 +964,56 @@ class Web3Service {
         isCredit,
         txHash,
       ]);
-
-      // Get the contract address
       final contractAddressHex = _contractAddr!.hex;
+      final dataHex =
+          '0x${functionCall.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
 
-      // Call JavaScript function to send transaction via MetaMask
-      if (!js.context.hasProperty('sendContractTransaction')) {
-        // Define the function
-        js.context.callMethod('eval', [
-          '''
-          window.sendContractTransaction = async function(contractAddress, encodedData, fromAddress) {
-            if (typeof window.ethereum === 'undefined') {
-              return {success: false, error: 'MetaMask not found'};
-            }
-            try {
-              // Estimate gas
-              const gasEstimate = await window.ethereum.request({
-                method: 'eth_estimateGas',
-                params: [{
-                  from: fromAddress,
-                  to: contractAddress,
-                  data: encodedData
-                }]
-              });
-              
-              // Send transaction
-              const txHash = await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{
-                  from: fromAddress,
-                  to: contractAddress,
-                  data: encodedData,
-                  gas: gasEstimate
-                }]
-              });
-              return {success: true, txHash: txHash};
-            } catch (error) {
-              return {success: false, error: error.message || error.toString()};
-            }
-          };
-          '''
-        ]);
+      if (await InAppWalletService.instance.isInAppWallet(userAddress)) {
+        final txHash = await _sendWithInAppWallet(
+          toAddress: contractAddressHex,
+          valueWei: BigInt.zero,
+          data: _hexToBytes(dataHex),
+        );
+        if (txHash != null) debugPrint('Transaction recorded on blockchain: $txHash');
+        return txHash;
       }
 
-      // Send the transaction
-      final result = js.context.callMethod('sendContractTransaction', [
-        contractAddressHex,
-        functionCall,
-        userAddress,
-      ]);
-      
-      if (result != null) {
-        final jsResult = result as js.JsObject;
-        final success = jsResult['success'] as bool? ?? false;
-        
-        if (success) {
-          final recordTxHash = jsResult['txHash'] as String?;
+      if (WalletConnectService.isAvailable &&
+          WalletConnectService.instance.isConnected) {
+        final recordTxHash =
+            await WalletConnectService.instance.sendContractTransaction(
+          contractAddress: contractAddressHex,
+          dataHex: dataHex,
+          from: userAddress,
+        );
+        if (recordTxHash != null) {
+          debugPrint('Transaction recorded on blockchain: $recordTxHash');
+          return recordTxHash;
+        }
+        return null;
+      }
+
+      if (js_bridge.Web3JsBridge.isAvailable) {
+        if (!js_bridge.Web3JsBridge.hasSendContractTransaction()) {
+          js_bridge.Web3JsBridge.defineSendContractTransaction();
+        }
+        final result = await js_bridge.Web3JsBridge.sendContractTransaction(
+            contractAddressHex, dataHex, userAddress);
+        if (result != null &&
+            js_bridge.Web3JsBridge.getJsResultSuccess(result)) {
+          final recordTxHash =
+              js_bridge.Web3JsBridge.getJsResultTxHash(result);
           debugPrint('Transaction recorded on blockchain: $recordTxHash');
           return recordTxHash;
         } else {
-          final error = jsResult['error'] as String? ?? 'Unknown error';
+          final error =
+              js_bridge.Web3JsBridge.getJsResultError(result) ?? 'Unknown error';
           debugPrint('Error recording transaction on blockchain: $error');
-          // Don't throw - allow fallback to local storage
           return null;
         }
       }
-      
-      return null;
+
+      return null; // No wallet connected, save locally only
     } catch (e) {
       debugPrint('Error recording transaction: $e');
       // Don't throw - allow fallback to local storage
@@ -1364,50 +1372,49 @@ class Web3Service {
     required double amountInEth,
   }) async {
     try {
-      if (!kIsWeb || _contract == null || _contractAddr == null) return null;
+      if (_contract == null || _contractAddr == null) return null;
 
       final fn = _contract!.function('payBooking');
       final call = fn.encodeCall([
         BigInt.from(bookingId),
         EthereumAddress.fromHex(beneficiaryAddress),
       ]);
-      final dataHex = '0x${call.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
+      final dataHex =
+          '0x${call.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
       final amountWei = BigInt.from((amountInEth * 1e18).round());
       final valueHex = '0x${amountWei.toRadixString(16)}';
 
-      if (!js.context.hasProperty('sendContractTransactionWithValue')) {
-        js.context.callMethod('eval', [
-          '''
-          window.sendContractTransactionWithValue = async function(contractAddress, encodedData, fromAddress, valueHex) {
-            if (typeof window.ethereum === 'undefined') return {success: false, error: 'MetaMask not found'};
-            try {
-              const gasEstimate = await window.ethereum.request({
-                method: 'eth_estimateGas',
-                params: [{ from: fromAddress, to: contractAddress, data: encodedData, value: valueHex }]
-              });
-              const txHash = await window.ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [{ from: fromAddress, to: contractAddress, data: encodedData, value: valueHex, gas: gasEstimate }]
-              });
-              return {success: true, txHash: txHash};
-            } catch (error) {
-              return {success: false, error: error.message || error.toString()};
-            }
-          };
-          '''
-        ]);
+      if (await InAppWalletService.instance.isInAppWallet(fromAddress)) {
+        return await _sendWithInAppWallet(
+          toAddress: _contractAddr!.hex,
+          valueWei: amountWei,
+          data: _hexToBytes(dataHex),
+        );
       }
-      final promise = js.context.callMethod('sendContractTransactionWithValue', [
-        _contractAddr!.hex,
-        dataHex,
-        fromAddress,
-        valueHex,
-      ]);
-      final result = await _promiseToFuture(promise);
-      if (result == null) return null;
-      final jsResult = result as js.JsObject;
-      final success = jsResult['success'] as bool? ?? false;
-      if (success) return jsResult['txHash'] as String?;
+
+      if (WalletConnectService.isAvailable &&
+          WalletConnectService.instance.isConnected) {
+        return await WalletConnectService.instance
+            .sendContractTransactionWithValue(
+          contractAddress: _contractAddr!.hex,
+          dataHex: dataHex,
+          from: fromAddress,
+          valueHex: valueHex,
+        );
+      }
+
+      if (js_bridge.Web3JsBridge.isAvailable) {
+        if (!js_bridge.Web3JsBridge.hasSendContractTransactionWithValue()) {
+          js_bridge.Web3JsBridge.defineSendContractTransactionWithValue();
+        }
+        final result = await js_bridge.Web3JsBridge
+            .sendContractTransactionWithValue(
+                _contractAddr!.hex, dataHex, fromAddress, valueHex);
+        if (result == null) return null;
+        if (js_bridge.Web3JsBridge.getJsResultSuccess(result)) {
+          return js_bridge.Web3JsBridge.getJsResultTxHash(result);
+        }
+      }
       return null;
     } catch (e) {
       debugPrint('Error payBooking: $e');
@@ -1549,97 +1556,45 @@ class Web3Service {
   // ==================== HELPER: SEND CONTRACT TRANSACTION ====================
 
   Future<String?> _sendContractTx(List<int> functionCall, String fromAddress) async {
-    if (!kIsWeb) {
-      throw Exception('Contract transactions only available on web');
-    }
+    if (_contractAddr == null) return null;
 
     final contractAddressHex = _contractAddr!.hex;
-    final dataHex = '0x${functionCall.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
+    final dataHex =
+        '0x${functionCall.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
 
-    if (!js.context.hasProperty('sendContractTransaction')) {
-      js.context.callMethod('eval', [
-        '''
-        window.sendContractTransaction = async function(contractAddress, encodedData, fromAddress) {
-          if (typeof window.ethereum === 'undefined') {
-            return {success: false, error: 'MetaMask not found'};
-          }
-          try {
-            const gasEstimate = await window.ethereum.request({
-              method: 'eth_estimateGas',
-              params: [{
-                from: fromAddress,
-                to: contractAddress,
-                data: encodedData
-              }]
-            });
-            const txHash = await window.ethereum.request({
-              method: 'eth_sendTransaction',
-              params: [{
-                from: fromAddress,
-                to: contractAddress,
-                data: encodedData,
-                gas: gasEstimate
-              }]
-            });
-            return {success: true, txHash: txHash};
-          } catch (error) {
-            return {success: false, error: error.message || error.toString()};
-          }
-        };
-        window.sendContractTransactionWithValue = async function(contractAddress, encodedData, fromAddress, valueHex) {
-          if (typeof window.ethereum === 'undefined') {
-            return {success: false, error: 'MetaMask not found'};
-          }
-          try {
-            const gasEstimate = await window.ethereum.request({
-              method: 'eth_estimateGas',
-              params: [{
-                from: fromAddress,
-                to: contractAddress,
-                data: encodedData,
-                value: valueHex
-              }]
-            });
-            const txHash = await window.ethereum.request({
-              method: 'eth_sendTransaction',
-              params: [{
-                from: fromAddress,
-                to: contractAddress,
-                data: encodedData,
-                value: valueHex,
-                gas: gasEstimate
-              }]
-            });
-            return {success: true, txHash: txHash};
-          } catch (error) {
-            return {success: false, error: error.message || error.toString()};
-          }
-        };
-        '''
-      ]);
+    if (await InAppWalletService.instance.isInAppWallet(fromAddress)) {
+      return await _sendWithInAppWallet(
+        toAddress: contractAddressHex,
+        valueWei: BigInt.zero,
+        data: _hexToBytes(dataHex),
+      );
     }
 
-    final promise = js.context.callMethod('sendContractTransaction', [
-      contractAddressHex,
-      dataHex,
-      fromAddress,
-    ]);
+    if (WalletConnectService.isAvailable &&
+        WalletConnectService.instance.isConnected) {
+      return await WalletConnectService.instance.sendContractTransaction(
+        contractAddress: contractAddressHex,
+        dataHex: dataHex,
+        from: fromAddress,
+      );
+    }
 
-    final result = await _promiseToFuture(promise);
+    if (js_bridge.Web3JsBridge.isAvailable) {
+      if (!js_bridge.Web3JsBridge.hasSendContractTransaction()) {
+        js_bridge.Web3JsBridge.defineSendContractTransaction();
+      }
+      final result = await js_bridge.Web3JsBridge.sendContractTransaction(
+          contractAddressHex, dataHex, fromAddress);
 
-    if (result != null) {
-      final jsResult = result as js.JsObject;
-      final success = jsResult['success'] as bool? ?? false;
-
-      if (success) {
-        return jsResult['txHash'] as String?;
-      } else {
-        final error = jsResult['error'] as String? ?? 'Unknown error';
+      if (result != null && js_bridge.Web3JsBridge.getJsResultSuccess(result)) {
+        return js_bridge.Web3JsBridge.getJsResultTxHash(result);
+      }
+      if (result != null) {
+        final error =
+            js_bridge.Web3JsBridge.getJsResultError(result) ?? 'Unknown error';
         debugPrint('Contract transaction error: $error');
-        return null;
       }
     }
-
     return null;
   }
 

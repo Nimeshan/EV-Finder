@@ -113,7 +113,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_filterP2P && !s.isP2P) return false;
 
       // Price range filter
-      if (s.pricePerKwh < _priceRange.start || s.pricePerKwh > _priceRange.end) return false;
+      if (s.pricePerKwh < _priceRange.start || s.pricePerKwh > _priceRange.end)
+        return false;
 
       // Speed filter
       if (!_selectedSpeeds.contains(s.speedCategory)) return false;
@@ -150,7 +151,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (matchingStation != null) {
-        final stationLocation = LatLng(matchingStation.latitude, matchingStation.longitude);
+        final stationLocation = LatLng(
+          matchingStation.latitude,
+          matchingStation.longitude,
+        );
         setState(() {
           _center = stationLocation;
           _selectedStation = matchingStation;
@@ -174,7 +178,9 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Location not found. Please try a different search.'),
+              content: Text(
+                'Location not found. Please try a different search.',
+              ),
               backgroundColor: Colors.red,
               duration: Duration(seconds: 2),
             ),
@@ -237,7 +243,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       const Text(
                         'Filters',
-                        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       TextButton(
                         onPressed: () {
@@ -250,21 +260,43 @@ class _HomeScreenState extends State<HomeScreen> {
                             tempSort = 'distance';
                           });
                         },
-                        child: const Text('Reset', style: TextStyle(color: AppColors.primaryBlue)),
+                        child: const Text(
+                          'Reset',
+                          style: TextStyle(color: AppColors.primaryBlue),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
 
                   // Quick toggles
-                  const Text('QUICK FILTERS', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const Text(
+                    'QUICK FILTERS',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     children: [
-                      _filterChip('Available', tempAvailable, (v) => setSheetState(() => tempAvailable = v)),
-                      _filterChip('Fast Charging', tempFast, (v) => setSheetState(() => tempFast = v)),
-                      _filterChip('Green Energy', tempGreen, (v) => setSheetState(() => tempGreen = v)),
+                      _filterChip(
+                        'Available',
+                        tempAvailable,
+                        (v) => setSheetState(() => tempAvailable = v),
+                      ),
+                      _filterChip(
+                        'Fast Charging',
+                        tempFast,
+                        (v) => setSheetState(() => tempFast = v),
+                      ),
+                      _filterChip(
+                        'Green Energy',
+                        tempGreen,
+                        (v) => setSheetState(() => tempGreen = v),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -272,7 +304,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Price range
                   Text(
                     'PRICE RANGE (\$${tempPrice.start.toStringAsFixed(2)} - \$${tempPrice.end.toStringAsFixed(2)}/kWh)',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
                   ),
                   RangeSlider(
                     values: tempPrice,
@@ -292,46 +328,93 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
 
                   // Charging speed
-                  const Text('CHARGING SPEED', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const Text(
+                    'CHARGING SPEED',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     children: [
-                      _filterChip('Fast (50+ kW)', tempSpeeds.contains('Fast'), (v) {
-                        setSheetState(() {
-                          if (v) { tempSpeeds.add('Fast'); } else { tempSpeeds.remove('Fast'); }
-                        });
-                      }),
-                      _filterChip('Medium (22-49 kW)', tempSpeeds.contains('Medium'), (v) {
-                        setSheetState(() {
-                          if (v) { tempSpeeds.add('Medium'); } else { tempSpeeds.remove('Medium'); }
-                        });
-                      }),
-                      _filterChip('Slow (<22 kW)', tempSpeeds.contains('Slow'), (v) {
-                        setSheetState(() {
-                          if (v) { tempSpeeds.add('Slow'); } else { tempSpeeds.remove('Slow'); }
-                        });
-                      }),
+                      _filterChip(
+                        'Fast (50+ kW)',
+                        tempSpeeds.contains('Fast'),
+                        (v) {
+                          setSheetState(() {
+                            if (v) {
+                              tempSpeeds.add('Fast');
+                            } else {
+                              tempSpeeds.remove('Fast');
+                            }
+                          });
+                        },
+                      ),
+                      _filterChip(
+                        'Medium (22-49 kW)',
+                        tempSpeeds.contains('Medium'),
+                        (v) {
+                          setSheetState(() {
+                            if (v) {
+                              tempSpeeds.add('Medium');
+                            } else {
+                              tempSpeeds.remove('Medium');
+                            }
+                          });
+                        },
+                      ),
+                      _filterChip(
+                        'Slow (<22 kW)',
+                        tempSpeeds.contains('Slow'),
+                        (v) {
+                          setSheetState(() {
+                            if (v) {
+                              tempSpeeds.add('Slow');
+                            } else {
+                              tempSpeeds.remove('Slow');
+                            }
+                          });
+                        },
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
 
                   // Sort by
-                  const Text('SORT BY', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1)),
+                  const Text(
+                    'SORT BY',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setSheetState(() => tempSort = 'distance'),
+                          onTap: () =>
+                              setSheetState(() => tempSort = 'distance'),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: tempSort == 'distance' ? AppColors.primaryBlue : AppColors.cardBackground,
+                              color: tempSort == 'distance'
+                                  ? AppColors.primaryBlue
+                                  : AppColors.cardBackground,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Center(
-                              child: Text('Distance', style: TextStyle(color: Colors.white, fontSize: 14)),
+                              child: Text(
+                                'Distance',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -343,11 +426,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: tempSort == 'price' ? AppColors.primaryBlue : AppColors.cardBackground,
+                              color: tempSort == 'price'
+                                  ? AppColors.primaryBlue
+                                  : AppColors.cardBackground,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Center(
-                              child: Text('Price (Low→High)', style: TextStyle(color: Colors.white, fontSize: 14)),
+                              child: Text(
+                                'Price (Low→High)',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -375,9 +466,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      child: const Text('Apply Filters', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                      child: const Text(
+                        'Apply Filters',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -390,9 +490,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _filterChip(String label, bool selected, ValueChanged<bool> onChanged) {
+  Widget _filterChip(
+    String label,
+    bool selected,
+    ValueChanged<bool> onChanged,
+  ) {
     return FilterChip(
-      label: Text(label, style: TextStyle(color: selected ? Colors.white : Colors.white70, fontSize: 12)),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: selected ? Colors.white : Colors.white70,
+          fontSize: 12,
+        ),
+      ),
       selected: selected,
       onSelected: onChanged,
       selectedColor: AppColors.primaryBlue,
@@ -447,7 +557,9 @@ class _HomeScreenState extends State<HomeScreen> {
               MarkerLayer(
                 markers: filteredStations.map((station) {
                   final isP2P = station.isP2P;
-                  final markerColor = isP2P ? const Color(0xFF9C27B0) : _getMarkerColor(station);
+                  final markerColor = isP2P
+                      ? const Color(0xFF9C27B0)
+                      : _getMarkerColor(station);
                   final markerIcon = isP2P ? Icons.home : Icons.ev_station;
                   return Marker(
                     point: LatLng(station.latitude, station.longitude),
@@ -475,7 +587,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 MarkerLayer(
                   markers: [
                     Marker(
-                      point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                      point: LatLng(
+                        _currentPosition!.latitude,
+                        _currentPosition!.longitude,
+                      ),
                       width: 30,
                       height: 30,
                       child: Container(
@@ -525,7 +640,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: const TextStyle(color: Colors.white),
                               decoration: InputDecoration(
                                 hintText: 'Search Location or Station',
-                                hintStyle: const TextStyle(color: Colors.white70),
+                                hintStyle: const TextStyle(
+                                  color: Colors.white70,
+                                ),
                                 prefixIcon: _isSearching
                                     ? const SizedBox(
                                         width: 20,
@@ -534,14 +651,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                           padding: EdgeInsets.all(12.0),
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
                                           ),
                                         ),
                                       )
-                                    : const Icon(Icons.search, color: Colors.white),
+                                    : const Icon(
+                                        Icons.search,
+                                        color: Colors.white,
+                                      ),
                                 suffixIcon: _searchController.text.isNotEmpty
                                     ? IconButton(
-                                        icon: const Icon(Icons.clear, color: Colors.white, size: 20),
+                                        icon: const Icon(
+                                          Icons.clear,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
                                         onPressed: () {
                                           _searchController.clear();
                                           setState(() {});
@@ -549,7 +676,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       )
                                     : null,
                                 border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                               onSubmitted: (value) => _performSearch(value),
                               onChanged: (value) => setState(() {}),
@@ -568,7 +698,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: IconButton(
-                                icon: const Icon(Icons.tune, color: Colors.white),
+                                icon: const Icon(
+                                  Icons.tune,
+                                  color: Colors.white,
+                                ),
                                 onPressed: _showFilterSheet,
                               ),
                             ),
@@ -586,7 +719,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: Center(
                                     child: Text(
                                       '$_activeFilterCount',
-                                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -604,8 +741,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: IconButton(
-                                icon: const Icon(Icons.search, color: Colors.white),
-                                onPressed: () => _performSearch(_searchController.text),
+                                icon: const Icon(
+                                  Icons.search,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () =>
+                                    _performSearch(_searchController.text),
                               ),
                             ),
                           ),
@@ -620,21 +761,56 @@ class _HomeScreenState extends State<HomeScreen> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            _buildQuickChip('Available', _filterAvailable, AppColors.green, () {
-                              setState(() { _filterAvailable = !_filterAvailable; _updateActiveFilterCount(); });
-                            }),
+                            _buildQuickChip(
+                              'Available',
+                              _filterAvailable,
+                              AppColors.green,
+                              () {
+                                setState(() {
+                                  _filterAvailable = !_filterAvailable;
+                                  _updateActiveFilterCount();
+                                });
+                              },
+                            ),
                             const SizedBox(width: 8),
-                            _buildQuickChip('Fast', _filterFastCharging, AppColors.primaryBlue, () {
-                              setState(() { _filterFastCharging = !_filterFastCharging; _updateActiveFilterCount(); });
-                            }, icon: Icons.bolt),
+                            _buildQuickChip(
+                              'Fast',
+                              _filterFastCharging,
+                              AppColors.primaryBlue,
+                              () {
+                                setState(() {
+                                  _filterFastCharging = !_filterFastCharging;
+                                  _updateActiveFilterCount();
+                                });
+                              },
+                              icon: Icons.bolt,
+                            ),
                             const SizedBox(width: 8),
-                            _buildQuickChip('Green', _filterGreenEnergy, AppColors.primaryBlue, () {
-                              setState(() { _filterGreenEnergy = !_filterGreenEnergy; _updateActiveFilterCount(); });
-                            }, icon: Icons.eco),
+                            _buildQuickChip(
+                              'Green',
+                              _filterGreenEnergy,
+                              AppColors.primaryBlue,
+                              () {
+                                setState(() {
+                                  _filterGreenEnergy = !_filterGreenEnergy;
+                                  _updateActiveFilterCount();
+                                });
+                              },
+                              icon: Icons.eco,
+                            ),
                             const SizedBox(width: 8),
-                            _buildQuickChip('P2P', _filterP2P, const Color(0xFF9C27B0), () {
-                              setState(() { _filterP2P = !_filterP2P; _updateActiveFilterCount(); });
-                            }, icon: Icons.people),
+                            _buildQuickChip(
+                              'P2P',
+                              _filterP2P,
+                              const Color(0xFF9C27B0),
+                              () {
+                                setState(() {
+                                  _filterP2P = !_filterP2P;
+                                  _updateActiveFilterCount();
+                                });
+                              },
+                              icon: Icons.people,
+                            ),
                             const SizedBox(width: 8),
                             _buildQuickChip(
                               _sortBy == 'price' ? 'Price ↑' : 'Distance ↑',
@@ -642,7 +818,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               AppColors.primaryBlue,
                               () {
                                 setState(() {
-                                  _sortBy = _sortBy == 'distance' ? 'price' : 'distance';
+                                  _sortBy = _sortBy == 'distance'
+                                      ? 'price'
+                                      : 'distance';
                                   _updateActiveFilterCount();
                                 });
                               },
@@ -664,7 +842,10 @@ class _HomeScreenState extends State<HomeScreen> {
               top: _showFilters ? 140 : 90,
               left: 16,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.green,
                   borderRadius: BorderRadius.circular(8),
@@ -676,7 +857,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 6),
                     Text(
                       '${filteredStations.length} stations',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -690,7 +874,10 @@ class _HomeScreenState extends State<HomeScreen> {
               heroTag: 'listCharger',
               backgroundColor: const Color(0xFF9C27B0),
               icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('List Charger', style: TextStyle(color: Colors.white)),
+              label: const Text(
+                'List Charger',
+                style: TextStyle(color: Colors.white),
+              ),
               onPressed: () => Navigator.pushNamed(context, '/list-station'),
             ),
           ),
@@ -701,7 +888,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: FloatingActionButton.small(
               heroTag: 'refresh',
               backgroundColor: AppColors.primaryBlue,
-              onPressed: () => _loadStations(_center.latitude, _center.longitude),
+              onPressed: () =>
+                  _loadStations(_center.latitude, _center.longitude),
               child: const Icon(Icons.refresh, color: Colors.white),
             ),
           ),
@@ -718,7 +906,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildQuickChip(String label, bool isSelected, Color activeColor, VoidCallback onTap, {IconData? icon}) {
+  Widget _buildQuickChip(
+    String label,
+    bool isSelected,
+    Color activeColor,
+    VoidCallback onTap, {
+    IconData? icon,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -734,7 +928,14 @@ class _HomeScreenState extends State<HomeScreen> {
               Icon(icon, color: Colors.white, size: 14),
               const SizedBox(width: 4),
             ],
-            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12)),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+              ),
+            ),
           ],
         ),
       ),
@@ -770,7 +971,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.grey[800],
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.ev_station, color: Colors.white, size: 40),
+                  child: const Icon(
+                    Icons.ev_station,
+                    color: Colors.white,
+                    size: 40,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -782,17 +987,31 @@ class _HomeScreenState extends State<HomeScreen> {
                           if (station.isP2P)
                             Container(
                               margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF9C27B0),
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: const Text('P2P', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'P2P',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           Expanded(
                             child: Text(
                               station.name,
-                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -802,46 +1021,78 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.location_on, color: Colors.white, size: 14),
+                          const Icon(
+                            Icons.location_on,
+                            color: Colors.white,
+                            size: 14,
+                          ),
                           const SizedBox(width: 4),
-                          Text('${station.distance.toStringAsFixed(1)} Mi',
-                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          Text(
+                            '${station.distance.toStringAsFixed(1)} Mi',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(width: 12),
-                          const Icon(Icons.local_parking, color: Colors.white70, size: 14),
+                          const Icon(
+                            Icons.local_parking,
+                            color: Colors.white70,
+                            size: 14,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             '${station.availableSlots}/${station.totalSlots} slots',
                             style: TextStyle(
-                              color: station.availableSlots > 0 ? AppColors.green : Colors.red,
+                              color: station.availableSlots > 0
+                                  ? AppColors.green
+                                  : Colors.red,
                               fontSize: 12,
                             ),
                           ),
                           if (station.energyType == 'Green Energy') ...[
                             const SizedBox(width: 12),
-                            const Icon(Icons.eco, color: Colors.green, size: 14),
+                            const Icon(
+                              Icons.eco,
+                              color: Colors.green,
+                              size: 14,
+                            ),
                           ],
                         ],
                       ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Text('\$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
-                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text(
+                            '\$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                           if (station.powerKw > 0) ...[
                             const SizedBox(width: 12),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: station.speedCategory == 'Fast'
                                     ? AppColors.primaryBlue
                                     : station.speedCategory == 'Medium'
-                                        ? Colors.orange
-                                        : Colors.grey,
+                                    ? Colors.orange
+                                    : Colors.grey,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 '${station.powerKw.toInt()} kW',
-                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -874,15 +1125,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryBlue,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.ev_station, color: Colors.white),
                     SizedBox(width: 8),
-                    Text('Book Charging Slot',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(
+                      'Book Charging Slot',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),

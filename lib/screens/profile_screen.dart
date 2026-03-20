@@ -43,7 +43,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       try {
         credits = await _energyService.getMyEnergyCredits(address);
         points = await _web3Service.getRewardPoints(address);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Error loading profile data: $e');
+      }
     }
 
     final demoMode = await ChargingStationService.isDemoMode();
@@ -99,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -134,6 +136,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   await _clearLocalCache();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text('Delete my account', style: TextStyle(color: Colors.red)),
+                subtitle: const Text('Remove all local data and disconnect wallet', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteAccount();
+                },
+              ),
+              const Divider(color: Colors.white24),
+              ListTile(
+                leading: const Icon(Icons.policy, color: Colors.white54),
+                title: const Text('Privacy Policy', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('How we handle your data', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, '/privacy-policy');
+                },
+              ),
               const Divider(color: Colors.white24),
               SwitchListTile(
                 secondary: const Icon(Icons.science, color: Colors.deepPurple),
@@ -141,16 +162,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 subtitle: const Text('Use mock stations only (for testing)', style: TextStyle(color: Colors.white54, fontSize: 12)),
                 value: _demoMode,
                 onChanged: (value) async {
+                  final messenger = ScaffoldMessenger.of(context);
                   await ChargingStationService.setDemoMode(value);
                   setState(() => _demoMode = value);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(value ? 'Demo mode on: map shows mock stations' : 'Demo mode off'),
-                        backgroundColor: AppColors.primaryBlue,
-                      ),
-                    );
-                  }
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(value ? 'Demo mode on: map shows mock stations' : 'Demo mode off'),
+                      backgroundColor: AppColors.primaryBlue,
+                    ),
+                  );
                 },
               ),
             ],
@@ -200,6 +220,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       );
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+        content: const Text(
+          'This will permanently remove all local data (bookings, transactions, preferences) '
+          'and disconnect your wallet from the app.\n\n'
+          'On-chain data (blockchain transactions, reviews) cannot be deleted due to the '
+          'immutable nature of the blockchain.\n\n'
+          'This action cannot be undone.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete Everything', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      await _web3Service.clearWallet();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account deleted. All local data removed.'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -322,7 +386,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Reward Points',
                     subtitle: '$_rewardPoints pts (charging, P2P, green energy)',
                     color: const Color(0xFFFFB300),
-                    onTap: () => Navigator.pushNamed(context, '/history'),
+                    onTap: () => Navigator.pushNamed(context, '/rewards'),
                   ),
                   const SizedBox(height: 12),
                   _buildMenuItem(

@@ -6,6 +6,8 @@ import 'screens/list_station_screen.dart';
 import 'screens/create_energy_listing_screen.dart';
 import 'screens/my_stations_screen.dart';
 import 'screens/station_reviews_screen.dart';
+import 'screens/rewards_screen.dart';
+import 'screens/privacy_policy_screen.dart';
 import 'widgets/app_scaffold.dart';
 
 void main() {
@@ -34,19 +36,21 @@ class MainApp extends StatelessWidget {
         '/list-station': (context) => const ListStationScreen(),
         '/my-stations': (context) => const MyStationsScreen(),
         '/create-listing': (context) => const CreateEnergyListingScreen(),
+        '/rewards': (context) => const RewardsScreen(),
+        '/privacy-policy': (context) => const PrivacyPolicyScreen(),
         '/station-reviews': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>? ?? {};
           return StationReviewsScreen(
-            stationId: args['stationId'],
-            stationName: args['stationName'],
+            stationId: args['stationId'] ?? '',
+            stationName: args['stationName'] ?? 'Station',
           );
         },
         '/booking-details': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>? ?? {};
           return BookingDetailsScreen(
-            stationName: args['stationName'],
-            address: args['address'],
-            pricePerKwh: args['pricePerKwh'],
+            stationName: args['stationName'] ?? 'Unknown Station',
+            address: args['address'] ?? '',
+            pricePerKwh: (args['pricePerKwh'] as num?)?.toDouble() ?? 0.25,
             energyType: args['energyType'] ?? 'Standard',
             stationId: args['stationId'],
             isP2P: args['isP2P'] ?? false,
@@ -54,15 +58,15 @@ class MainApp extends StatelessWidget {
           );
         },
         '/payment-confirmation': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>? ?? {};
           return PaymentConfirmationScreen(
-            stationName: args['stationName'],
-            address: args['address'],
-            totalAmount: args['totalAmount'],
-            energy: args['energy'],
-            duration: args['duration'],
+            stationName: args['stationName'] ?? 'Unknown Station',
+            address: args['address'] ?? '',
+            totalAmount: (args['totalAmount'] as num?)?.toDouble() ?? 0.0,
+            energy: (args['energy'] as num?)?.toDouble() ?? 0.0,
+            duration: (args['duration'] as num?)?.toDouble() ?? 0.0,
             energyType: args['energyType'] ?? 'Standard',
-            bookingId: args['bookingId'],
+            bookingId: args['bookingId'] ?? '',
             contractBookingId: args['contractBookingId'],
             isP2P: args['isP2P'] ?? false,
             ownerAddress: args['ownerAddress'],

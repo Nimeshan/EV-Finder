@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -33,15 +35,23 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _filterFastCharging = false;
   bool _filterGreenEnergy = false;
   bool _filterP2P = false;
-  RangeValues _priceRange = const RangeValues(0.0, 1.00);
+  RangeValues _priceRange = const RangeValues(0.0, 2.00);
   Set<String> _selectedSpeeds = {'Fast', 'Medium', 'Slow'};
   String _sortBy = 'distance'; // 'distance' or 'price'
   int _activeFilterCount = 0;
+
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    // Auto-refresh station availability every 30 seconds
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        _loadStations(_center.latitude, _center.longitude);
+      }
+    });
   }
 
   void _updateActiveFilterCount() {
@@ -50,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_filterFastCharging) count++;
     if (_filterGreenEnergy) count++;
     if (_filterP2P) count++;
-    if (_priceRange.start > 0.0 || _priceRange.end < 1.00) count++;
+    if (_priceRange.start > 0.0 || _priceRange.end < 2.00) count++;
     if (_selectedSpeeds.length < 3) count++;
     if (_sortBy != 'distance') count++;
     _activeFilterCount = count;
@@ -113,8 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_filterP2P && !s.isP2P) return false;
 
       // Price range filter
-      if (s.pricePerKwh < _priceRange.start || s.pricePerKwh > _priceRange.end)
+      if (s.pricePerKwh < _priceRange.start || s.pricePerKwh > _priceRange.end) {
         return false;
+      }
 
       // Speed filter
       if (!_selectedSpeeds.contains(s.speedCategory)) return false;
@@ -255,7 +266,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             tempAvailable = true;
                             tempFast = false;
                             tempGreen = false;
-                            tempPrice = const RangeValues(0.0, 1.00);
+                            tempPrice = const RangeValues(0.0, 2.00);
                             tempSpeeds = {'Fast', 'Medium', 'Slow'};
                             tempSort = 'distance';
                           });
@@ -313,8 +324,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   RangeSlider(
                     values: tempPrice,
                     min: 0.0,
-                    max: 1.00,
-                    divisions: 20,
+                    max: 2.00,
+                    divisions: 40,
                     activeColor: AppColors.primaryBlue,
                     inactiveColor: Colors.white24,
                     labels: RangeLabels(
@@ -514,6 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -1027,11 +1039,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             size: 14,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            '${station.distance.toStringAsFixed(1)} Mi',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
+                          Flexible(
+                            child: Text(
+                              '${station.distance.toStringAsFixed(1)} Mi',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1041,13 +1056,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             size: 14,
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            '${station.availableSlots}/${station.totalSlots} slots',
-                            style: TextStyle(
-                              color: station.availableSlots > 0
-                                  ? AppColors.green
-                                  : Colors.red,
-                              fontSize: 12,
+                          Flexible(
+                            child: Text(
+                              '${station.availableSlots}/${station.totalSlots} slots',
+                              style: TextStyle(
+                                color: station.availableSlots > 0
+                                    ? AppColors.green
+                                    : Colors.red,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (station.energyType == 'Green Energy') ...[

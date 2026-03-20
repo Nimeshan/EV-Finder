@@ -40,9 +40,9 @@ class _CreateEnergyListingScreenState extends State<CreateEnergyListingScreen> {
 
   Future<void> _createListing() async {
     final price = double.tryParse(_priceController.text);
-    if (price == null || price <= 0) {
+    if (price == null || price < 0.01 || price > 10.0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid price'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Price must be between \$0.01 and \$10.00 per kWh'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -126,6 +126,54 @@ class _CreateEnergyListingScreenState extends State<CreateEnergyListingScreen> {
                 ],
               ),
             ),
+            if (_myCredits <= 0) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.5)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: AppColors.primaryBlue, size: 22),
+                        SizedBox(width: 8),
+                        Text(
+                          'You need energy credits to sell',
+                          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Add Solar Credits from the Trade tab first, then come back here to list them for sale.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, '/marketplace');
+                        },
+                        icon: const Icon(Icons.bolt, size: 18, color: AppColors.primaryBlue),
+                        label: const Text('Go to Trade → Add Solar Credits', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.primaryBlue),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 32),
 
             const Text('ENERGY AMOUNT', style: TextStyle(color: Colors.white70, fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w600)),

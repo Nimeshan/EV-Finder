@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/review.dart';
 import '../services/review_service.dart';
+import '../services/web3_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/review_dialog.dart';
 import '../widgets/star_rating.dart';
 
 class StationReviewsScreen extends StatefulWidget {
@@ -20,6 +22,7 @@ class StationReviewsScreen extends StatefulWidget {
 
 class _StationReviewsScreenState extends State<StationReviewsScreen> {
   final ReviewService _reviewService = ReviewService();
+  final Web3Service _web3Service = Web3Service();
   List<Review> _reviews = [];
   Map<String, dynamic> _rating = {'average': 0.0, 'count': 0};
   bool _isLoading = true;
@@ -41,6 +44,37 @@ class _StationReviewsScreenState extends State<StationReviewsScreen> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Future<void> _openReviewDialog() async {
+    final walletAddress = await _web3Service.getSavedWalletAddress();
+    if (walletAddress == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No wallet connected'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: ReviewDialog(
+          stationId: widget.stationId,
+          bookingId: 0,
+          fromAddress: walletAddress,
+        ),
+      ),
+    );
+
+    if (submitted == true) {
+      _loadReviews();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final avg = (_rating['average'] as num).toDouble();
@@ -55,7 +89,13 @@ class _StationReviewsScreenState extends State<StationReviewsScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.stationName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+        title: Text(widget.stationName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openReviewDialog,
+        backgroundColor: AppColors.primaryBlue,
+        icon: const Icon(Icons.rate_review, color: Colors.white),
+        label: const Text('Write Review', style: TextStyle(color: Colors.white)),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryBlue)))

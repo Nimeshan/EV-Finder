@@ -58,27 +58,29 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
         title: const Text('Add Energy Credits', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Simulate solar energy production by adding energy credits to your account.',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Energy (kWh)',
-                labelStyle: const TextStyle(color: Colors.white54),
-                filled: true,
-                fillColor: AppColors.background,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Simulate solar energy production by adding energy credits to your account.',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Energy (kWh)',
+                  labelStyle: const TextStyle(color: Colors.white54),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -97,7 +99,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
       ),
     );
 
-    if (result != null && result > 0 && _walletAddress != null) {
+    if (result != null && result > 0 && result <= 10000 && _walletAddress != null) {
       await _tradingService.addCredits(walletAddress: _walletAddress!, energyKwh: result);
       await _loadData();
       if (mounted) {
@@ -116,16 +118,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
         title: const Text('Confirm Purchase', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Energy: ${listing.energyKwh.toStringAsFixed(1)} kWh', style: const TextStyle(color: Colors.white)),
-            Text('Price: \$${listing.totalPrice.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white)),
-            Text('Seller: ${listing.sellerShort}', style: const TextStyle(color: Colors.white70)),
-            const SizedBox(height: 8),
-            const Text('This will trigger a MetaMask payment to the seller.', style: TextStyle(color: Colors.white54, fontSize: 12)),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Energy: ${listing.energyKwh.toStringAsFixed(1)} kWh', style: const TextStyle(color: Colors.white)),
+              Text('Price: \$${listing.totalPrice.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white)),
+              Text('Seller: ${listing.sellerShort}', style: const TextStyle(color: Colors.white70)),
+              const SizedBox(height: 8),
+              const Text('This will trigger a MetaMask payment to the seller.', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -163,12 +167,29 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
           paymentTxHash: txHash,
         );
 
-        await _loadData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Purchased ${listing.energyKwh.toStringAsFixed(1)} kWh! Credits added to your balance.'),
+              content: Text('✅ Payment sent! Tx: ${txHash.substring(0, 10)}... (verifying balance...)'),
               backgroundColor: AppColors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Wait for Sepolia to confirm, then reload
+        await Future.delayed(const Duration(seconds: 3));
+        await _loadData();
+
+        // Fetch updated wallet balance from Web3
+        final updatedBalance = await _web3Service.getBalance(_walletAddress!);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Purchased ${listing.energyKwh.toStringAsFixed(1)} kWh! Balance: ${updatedBalance.toStringAsFixed(4)} ETH'),
+              backgroundColor: AppColors.green,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -240,10 +261,6 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
         itemCount: _activeListings.length,
         itemBuilder: (context, index) {
           final listing = _activeListings[index];
-          // Don't show own listings in buy tab
-          if (_walletAddress != null && listing.sellerAddress.toLowerCase() == _walletAddress!.toLowerCase()) {
-            return const SizedBox.shrink();
-          }
           return _buildBuyCard(listing);
         },
       ),
@@ -276,8 +293,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${listing.energyKwh.toStringAsFixed(1)} kWh', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text('Seller: ${listing.sellerShort}', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    Text('${listing.energyKwh.toStringAsFixed(1)} kWh', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                    Text('Seller: ${listing.sellerShort}', style: const TextStyle(color: Colors.white54, fontSize: 13), overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -353,7 +370,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
                       const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _myCredits > 0 ? () => Navigator.pushNamed(context, '/create-listing') : null,
+                          onPressed: () => Navigator.pushNamed(context, '/create-listing'),
                           icon: const Icon(Icons.sell, color: Colors.white, size: 18),
                           label: const Text('Sell Energy', style: TextStyle(color: Colors.white)),
                           style: ElevatedButton.styleFrom(
@@ -421,10 +438,12 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> with SingleTicker
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('${listing.energyKwh.toStringAsFixed(1)} kWh @ \$${listing.pricePerKwh.toStringAsFixed(2)}/kWh',
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Text('Total: \$${listing.totalPrice.toStringAsFixed(2)} • ${listing.formattedDate}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                    overflow: TextOverflow.ellipsis),
               ],
             ),
           ),

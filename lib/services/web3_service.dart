@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:web3dart/web3dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Platform-specific: web uses dart:js/MetaMask; mobile uses WalletConnect.
 import 'web3_js_bridge_web.dart'
@@ -15,13 +16,15 @@ import 'wallet_connect_service.dart';
 import 'in_app_wallet_service.dart';
 
 class Web3Service {
-  static const String sepoliaRpcUrl = 'https://rpc.sepolia.org';
+  // Use Alchemy (free tier) - reliable and always works
+  static const String sepoliaRpcUrl = 'https://eth-sepolia.g.alchemy.com/v2/I-m-8vTgkcz4YF9LXiUeW';
+  static const String sepoliaRpcUrlFallback = 'https://rpc.sepolia.org';
   static const String goerliRpcUrl = 'https://rpc.ankr.com/eth_goerli';
   static const String mumbaiRpcUrl = 'https://rpc-mumbai.maticvigil.com';
   static const int sepoliaChainId = 11155111;
   
   // Update this with your deployed contract address
-  static const String contractAddress = 'YOUR_CONTRACT_ADDRESS_HERE';
+  static const String contractAddress = '0xE5CB6F08e1a583dfDD4019622addF6c92d9C1271';
   
   // Contract ABI (Application Binary Interface)
   static const String contractABI = '''
@@ -217,6 +220,13 @@ class Web3Service {
       "inputs": [{"internalType": "address", "name": "_owner", "type": "address"}],
       "name": "getOwnerStations",
       "outputs": [{"internalType": "uint256[]", "name": "", "type": "uint256[]"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "stationCounter",
+      "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
       "stateMutability": "view",
       "type": "function"
     },
@@ -425,12 +435,10 @@ class Web3Service {
 
     _client = Web3Client(rpcUrl, http.Client());
     
-    // Only initialize contract if address is set
-    if (contractAddress != 'YOUR_CONTRACT_ADDRESS_HERE') {
-      _contractAddr = EthereumAddress.fromHex(contractAddress);
-      final contractAbi = ContractAbi.fromJson(contractABI, 'EVFinder');
-      _contract = DeployedContract(contractAbi, _contractAddr!);
-    }
+    // Initialize contract with deployed address
+    _contractAddr = EthereumAddress.fromHex(contractAddress);
+    final contractAbi = ContractAbi.fromJson(contractABI, 'EVFinder');
+    _contract = DeployedContract(contractAbi, _contractAddr!);
   }
 
   /// Create or get in-app wallet (no MetaMask needed). Returns address.
@@ -792,6 +800,25 @@ class Web3Service {
     await prefs.remove(InAppWalletService.keyWalletType);
   }
 
+  /// Import a wallet from a private key hex string (without 0x prefix).
+  Future<void> importPrivateKey(String privateKeyHex) async {
+    final cred = EthPrivateKey.fromHex(privateKeyHex);
+    final address = cred.address.hex;
+
+    // Delete any existing in-app wallet, then store the imported key
+    // by writing directly via the same secure storage key InAppWalletService uses.
+    final inApp = InAppWalletService.instance;
+    await inApp.deleteInAppWallet();
+
+    // Re-create with the imported key by writing to secure storage
+    final secure = const FlutterSecureStorage();
+    await secure.write(key: 'evfinder_in_app_pk', value: privateKeyHex);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wallet_address', address);
+    await prefs.setString(InAppWalletService.keyWalletType, 'in_app');
+  }
+
   /// Send a transaction using the in-app wallet (signed locally). Returns tx hash or null.
   Future<String?> _sendWithInAppWallet({
     required String toAddress,
@@ -823,25 +850,34 @@ class Web3Service {
     return Uint8List.fromList(hex.decode(s));
   }
 
-  // Get ETH balance for an address
+  // Get ETH balance for an address with multiple RPC fallbacks
   Future<double> getBalance(String address) async {
-    try {
-      await initialize();
-      if (_client == null) {
-        return 0.0;
-      }
+    final rpcEndpoints = [
+      sepoliaRpcUrl,
+      sepoliaRpcUrlFallback,
+      'https://rpc.sepolia.org',
+      'https://endpoints.omnirpc.io/eth/sepolia',
+    ];
 
-      final ethAddress = EthereumAddress.fromHex(address);
-      final balance = await _client!.getBalance(ethAddress);
-      
-      // Convert from Wei to ETH (1 ETH = 10^18 Wei)
-      // balance is already in EtherAmount, use getValueInUnit
-      final ethBalance = balance.getValueInUnit(EtherUnit.ether);
-      return ethBalance;
-    } catch (e) {
-      debugPrint('Error getting balance: $e');
-      return 0.0;
+    for (final rpcUrl in rpcEndpoints) {
+      try {
+        debugPrint('Trying RPC: $rpcUrl');
+        final client = Web3Client(rpcUrl, http.Client());
+        final ethAddress = EthereumAddress.fromHex(address);
+        final balance = await client.getBalance(ethAddress);
+
+        // Convert from Wei to ETH (1 ETH = 10^18 Wei)
+        final ethBalance = balance.getValueInUnit(EtherUnit.ether);
+        debugPrint('✅ Balance fetched from $rpcUrl: $ethBalance ETH for $address');
+        return ethBalance;
+      } catch (e) {
+        debugPrint('❌ RPC failed ($rpcUrl): $e');
+        continue;
+      }
     }
+
+    debugPrint('⚠️ All RPC endpoints failed for balance fetch');
+    return 0.0;
   }
 
   // Send payment via in-app wallet, MetaMask (web), or WalletConnect (mobile)
@@ -1178,6 +1214,23 @@ class Web3Service {
     }
   }
 
+  /// Returns the current station counter (latest P2P station id). Use after registerStation to get the new station id.
+  Future<int?> getStationCounter() async {
+    try {
+      if (_client == null || _contract == null) return null;
+      final fn = _contract!.function('stationCounter');
+      final result = await _client!.call(
+        contract: _contract!,
+        function: fn,
+        params: [],
+      );
+      return (result[0] as BigInt).toInt();
+    } catch (e) {
+      debugPrint('Error getting station counter: $e');
+      return null;
+    }
+  }
+
   // ==================== ENERGY TRADING METHODS ====================
 
   Future<String?> addEnergyCredits({
@@ -1470,6 +1523,14 @@ class Web3Service {
       debugPrint('Error getRewardPoints: $e');
       return 0;
     }
+  }
+
+  /// Redeem reward points (persisted locally; on-chain when contract supports it).
+  Future<void> redeemRewardPoints(String address, int pointsCost) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'redeemed_points_${address.toLowerCase()}';
+    final alreadyRedeemed = prefs.getInt(key) ?? 0;
+    await prefs.setInt(key, alreadyRedeemed + pointsCost);
   }
 
   // ==================== REVIEW METHODS ====================

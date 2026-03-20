@@ -49,17 +49,17 @@ class EnergyListing {
 
   factory EnergyListing.fromContractData(Map<String, dynamic> data) {
     return EnergyListing(
-      id: data['id'] ?? 0,
-      sellerAddress: data['seller'] ?? '',
-      energyKwh: (data['energyKwh'] ?? 0) / 1000.0,
-      pricePerKwh: (data['pricePerKwh'] ?? 0) / 100.0,
-      totalPrice: (data['totalPrice'] ?? 0) / 100.0,
-      isActive: data['isActive'] ?? false,
-      isSold: data['isSold'] ?? false,
-      buyerAddress: data['buyer'],
-      txHash: data['txHash'],
+      id: (data['id'] as num?)?.toInt() ?? 0,
+      sellerAddress: (data['seller'] as String?) ?? '',
+      energyKwh: ((data['energyKwh'] as num?) ?? 0).toDouble() / 1000.0,
+      pricePerKwh: ((data['pricePerKwh'] as num?) ?? 0).toDouble() / 100.0,
+      totalPrice: ((data['totalPrice'] as num?) ?? 0).toDouble() / 100.0,
+      isActive: (data['isActive'] as bool?) ?? false,
+      isSold: (data['isSold'] as bool?) ?? false,
+      buyerAddress: data['buyer'] as String?,
+      txHash: data['txHash'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
-        ((data['createdAt'] ?? 0) as int) * 1000,
+        ((data['createdAt'] as num?) ?? 0).toInt() * 1000,
       ),
     );
   }

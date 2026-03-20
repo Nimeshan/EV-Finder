@@ -15,7 +15,8 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProviderStateMixin {
+class _HistoryScreenState extends State<HistoryScreen>
+    with SingleTickerProviderStateMixin {
   final TransactionService _transactionService = TransactionService();
   final BookingService _bookingService = BookingService();
   final Web3Service _web3Service = Web3Service();
@@ -50,9 +51,14 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     try {
       _walletAddress = await _web3Service.getSavedWalletAddress();
       if (_walletAddress != null) {
-        _transactions = await _transactionService.getTransactionsForWallet(_walletAddress!);
-        _bookings = await _bookingService.getUserBookings(walletAddress: _walletAddress);
-        _energyTrades = await _energyService.getMyListings(_walletAddress!);
+        _transactions = await _transactionService.getTransactionsForWallet(
+          _walletAddress!,
+        );
+        _bookings = await _bookingService.getUserBookings(
+          walletAddress: _walletAddress,
+        );
+        // Get ALL energy trades (both bought and sold)
+        _energyTrades = await _energyService.getMyEnergyTrades(_walletAddress!);
       } else {
         _transactions = await _transactionService.getTransactions();
         _bookings = await _bookingService.getUserBookings();
@@ -62,6 +68,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
       debugPrint('Error loading history data: $e');
       _transactions = [];
       _bookings = [];
+      _energyTrades = [];
     } finally {
       if (mounted) {
         setState(() {
@@ -100,7 +107,10 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Cancel Booking', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Cancel Booking',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -142,7 +152,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Padding(
+      builder: (context) => SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -170,8 +180,14 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             const SizedBox(height: 20),
             _buildDetailRow('Station', transaction.stationName),
             _buildDetailRow('Date', transaction.formattedDate),
-            _buildDetailRow('Energy', '${transaction.energy.toStringAsFixed(1)} kWh'),
-            _buildDetailRow('Amount', '\$${transaction.amount.abs().toStringAsFixed(2)}'),
+            _buildDetailRow(
+              'Energy',
+              '${transaction.energy.toStringAsFixed(1)} kWh',
+            ),
+            _buildDetailRow(
+              'Amount',
+              '\$${transaction.amount.abs().toStringAsFixed(2)}',
+            ),
             _buildDetailRow('Wallet', walletDisplay),
             if (transaction.txHash != null && transaction.txHash!.isNotEmpty)
               _buildDetailRow(
@@ -401,17 +417,23 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
   }
 
   Widget _buildEnergyTradeCard(EnergyListing trade) {
+    // Determine if user is buyer or seller
+    final isSeller =
+        _walletAddress != null &&
+        trade.sellerAddress.toLowerCase() == _walletAddress!.toLowerCase();
+
     Color statusColor;
-    String statusText;
+    String actionText;
+
     if (trade.isSold) {
       statusColor = AppColors.green;
-      statusText = 'Sold';
+      actionText = isSeller ? 'SOLD ↗' : 'PURCHASED ↙';
     } else if (trade.isActive) {
       statusColor = Colors.orange;
-      statusText = 'Active';
+      actionText = 'LISTED';
     } else {
       statusColor = Colors.red;
-      statusText = 'Cancelled';
+      actionText = 'CANCELLED';
     }
 
     return Container(
@@ -429,9 +451,16 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
             decoration: BoxDecoration(
               color: Colors.transparent,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.green, width: 2),
+              border: Border.all(
+                color: isSeller ? Colors.orange : AppColors.green,
+                width: 2,
+              ),
             ),
-            child: const Icon(Icons.bolt, color: AppColors.green, size: 24),
+            child: Icon(
+              isSeller ? Icons.arrow_upward : Icons.arrow_downward,
+              color: isSeller ? Colors.orange : AppColors.green,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -442,7 +471,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '${trade.energyKwh.toStringAsFixed(1)} kWh',
+                    '${trade.energyKwh.toStringAsFixed(1)} kWh @ \$${trade.pricePerKwh.toStringAsFixed(2)}/kWh',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -453,7 +482,7 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${trade.formattedDate} • \$${trade.pricePerKwh.toStringAsFixed(2)}/kWh',
+                    trade.formattedDate,
                     style: const TextStyle(
                       color: AppColors.subtleGray,
                       fontSize: 14,
@@ -473,8 +502,8 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
               children: [
                 Text(
                   '\$${trade.totalPrice.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: isSeller ? Colors.orange : AppColors.green,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -483,13 +512,16 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    statusText,
+                    actionText,
                     style: TextStyle(
                       color: statusColor,
                       fontSize: 11,
@@ -571,7 +603,9 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   Text(
                     '${transaction.amount >= 0 ? '+' : ''}\$${transaction.amount.abs().toStringAsFixed(2)}',
                     style: TextStyle(
-                      color: transaction.isCredit ? AppColors.green : Colors.white,
+                      color: transaction.isCredit
+                          ? AppColors.green
+                          : Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -579,7 +613,11 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                     maxLines: 1,
                   ),
                   const SizedBox(height: 4),
-                  const Icon(Icons.receipt_long, color: Colors.white38, size: 16),
+                  const Icon(
+                    Icons.receipt_long,
+                    color: Colors.white38,
+                    size: 16,
+                  ),
                 ],
               ),
             ),
@@ -590,7 +628,9 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
   }
 
   Widget _buildBookingCard(Booking booking) {
-    final isCancellable = booking.status == BookingStatus.pending || booking.status == BookingStatus.confirmed;
+    final isCancellable =
+        booking.status == BookingStatus.pending ||
+        booking.status == BookingStatus.confirmed;
 
     Color statusColor;
     switch (booking.status) {
@@ -629,7 +669,11 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.primaryBlue, width: 2),
                 ),
-                child: const Icon(Icons.calendar_today, color: AppColors.primaryBlue, size: 22),
+                child: const Icon(
+                  Icons.calendar_today,
+                  color: AppColors.primaryBlue,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -667,7 +711,10 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),

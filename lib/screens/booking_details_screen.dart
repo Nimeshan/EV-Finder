@@ -202,18 +202,20 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
       // Create on-chain first when contract is deployed (enables escrow payment and refunds)
       int? contractBookingId;
-      try {
-        contractBookingId = await _web3Service.createBookingOnChain(
-          fromAddress: walletAddress ?? '',
-          stationId: stationId,
-          connectorType: _selectedConnector,
-          startTimeUnix: startTime.millisecondsSinceEpoch ~/ 1000,
-          endTimeUnix: endTime.millisecondsSinceEpoch ~/ 1000,
-          energyKwhScaled: (estimatedEnergy * 1000).round(),
-          amountUsdCents: (totalEstimate * 100).round(),
-        );
-      } catch (_) {
-        // Continue with local-only booking if contract not deployed or RPC fails
+      if (walletAddress != null && walletAddress.isNotEmpty) {
+        try {
+          contractBookingId = await _web3Service.createBookingOnChain(
+            fromAddress: walletAddress,
+            stationId: stationId,
+            connectorType: _selectedConnector,
+            startTimeUnix: startTime.millisecondsSinceEpoch ~/ 1000,
+            endTimeUnix: endTime.millisecondsSinceEpoch ~/ 1000,
+            energyKwhScaled: (estimatedEnergy * 1000).round(),
+            amountUsdCents: (totalEstimate * 100).round(),
+          );
+        } catch (e) {
+          debugPrint('On-chain booking skipped: $e');
+        }
       }
 
       final booking = await _bookingService.createBooking(
@@ -444,23 +446,25 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                     children: [
                       const Icon(Icons.timer_outlined, color: Colors.white54, size: 20),
                       const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Est. Duration',
-                            style: TextStyle(color: Colors.white54, fontSize: 12),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '~${estimatedTime.toInt()} min',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Est. Duration',
+                              style: TextStyle(color: Colors.white54, fontSize: 12),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              '~${estimatedTime.toInt()} min',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -644,9 +648,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                         'Booking Time',
                         style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
-                      Text(
-                        _formattedBookingTime,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          _formattedBookingTime,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),

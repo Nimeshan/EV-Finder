@@ -70,9 +70,16 @@ class P2PStationService {
       isGreenEnergy: isGreenEnergy,
     );
 
-    // Create local station object
+    // Use on-chain station id when registration succeeded; otherwise local id for fallback
+    int stationId = DateTime.now().millisecondsSinceEpoch;
+    if (txHash != null) {
+      final counter = await _web3Service.getStationCounter();
+      if (counter != null) stationId = counter;
+      debugPrint('Station registered on-chain: $txHash (id: $stationId)');
+    }
+
     final station = P2PStation(
-      id: DateTime.now().millisecondsSinceEpoch,
+      id: stationId,
       ownerAddress: fromAddress,
       name: name,
       locationAddress: locationAddress,
@@ -86,12 +93,8 @@ class P2PStationService {
       createdAt: DateTime.now(),
     );
 
-    // Always save locally as fallback
+    // Always save locally as fallback / cache
     await _saveStationLocally(station);
-
-    if (txHash != null) {
-      debugPrint('Station registered on-chain: $txHash');
-    }
 
     return station;
   }
@@ -102,6 +105,25 @@ class P2PStationService {
     if (index == -1) return;
 
     final old = stations[index];
+    final newPrice = pricePerKwh ?? old.pricePerKwh;
+    final newActive = isActive ?? old.isActive;
+
+    // Sync to chain when contract is deployed (owner-only; no-op if not deployed or not owner)
+    try {
+      await _web3Service.initialize();
+      final wallet = await _web3Service.getSavedWalletAddress();
+      if (wallet != null && wallet.toLowerCase() == old.ownerAddress.toLowerCase()) {
+        await _web3Service.updateStationOnChain(
+          fromAddress: wallet,
+          stationId: stationId,
+          pricePerKwh: newPrice,
+          isActive: newActive,
+        );
+      }
+    } catch (e) {
+      debugPrint('Optional on-chain station update skipped: $e');
+    }
+
     final updated = P2PStation(
       id: old.id,
       ownerAddress: old.ownerAddress,
@@ -111,9 +133,9 @@ class P2PStationService {
       longitude: old.longitude,
       connectorType: old.connectorType,
       powerKw: old.powerKw,
-      pricePerKwh: pricePerKwh ?? old.pricePerKwh,
+      pricePerKwh: newPrice,
       isGreenEnergy: old.isGreenEnergy,
-      isActive: isActive ?? old.isActive,
+      isActive: newActive,
       createdAt: old.createdAt,
       averageRating: old.averageRating,
       reviewCount: old.reviewCount,

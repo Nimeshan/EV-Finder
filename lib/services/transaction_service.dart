@@ -74,9 +74,13 @@ class TransactionService {
     try {
       await _web3Service.initialize();
       
-      // Record transaction on blockchain
+      // Record transaction on blockchain (skip if no wallet)
+      if (transaction.walletAddress == null || transaction.walletAddress!.isEmpty) {
+        await _saveTransactionLocally(transaction);
+        return;
+      }
       await _web3Service.recordTransaction(
-        userAddress: transaction.walletAddress ?? '',
+        userAddress: transaction.walletAddress!,
         stationName: transaction.stationName,
         energy: transaction.energy,
         amount: transaction.amount.abs(), // Store as positive value

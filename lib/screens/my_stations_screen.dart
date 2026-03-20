@@ -129,9 +129,9 @@ class _MyStationsScreenState extends State<MyStationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(station.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(station.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis, maxLines: 1),
                     const SizedBox(height: 4),
-                    Text(station.locationAddress, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    Text(station.locationAddress, style: const TextStyle(color: Colors.white54, fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 2),
                   ],
                 ),
               ),
@@ -158,9 +158,12 @@ class _MyStationsScreenState extends State<MyStationsScreen> {
           Row(
             children: [
               const SizedBox(width: 60),
-              Text(
-                '${station.connectorType} • \$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
-                style: const TextStyle(color: Colors.white54, fontSize: 13),
+              Expanded(
+                child: Text(
+                  '${station.connectorType} • \$${station.pricePerKwh.toStringAsFixed(2)}/kWh',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (station.isGreenEnergy) ...[
                 const SizedBox(width: 8),

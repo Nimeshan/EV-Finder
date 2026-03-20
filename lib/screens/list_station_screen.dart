@@ -45,6 +45,14 @@ class _ListStationScreenState extends State<ListStationScreen> {
       return;
     }
 
+    final stationName = _nameController.text.trim();
+    if (stationName.length < 3 || stationName.length > 50) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Station name must be 3-50 characters'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     final lat = double.tryParse(_latController.text.trim());
     final lng = double.tryParse(_lngController.text.trim());
     final price = double.tryParse(_priceController.text.trim());
@@ -52,6 +60,27 @@ class _ListStationScreenState extends State<ListStationScreen> {
     if (lat == null || lng == null || price == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invalid number format'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Latitude must be between -90 and 90'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (lng < -180 || lng > 180) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Longitude must be between -180 and 180'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (price < 0.01 || price > 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Price must be between \$0.01 and \$10 per kWh'), backgroundColor: Colors.red),
       );
       return;
     }

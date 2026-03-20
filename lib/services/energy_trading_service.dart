@@ -53,13 +53,91 @@ class EnergyTradingService {
       debugPrint('Error fetching on-chain listings: $e');
     }
 
-    return _getLocalListings(activeOnly: true);
+    // Check local listings
+    final localListings = await _getLocalListings(activeOnly: true);
+
+    // If no listings exist, create mock listings for demo
+    if (localListings.isEmpty) {
+      return _getMockListings();
+    }
+
+    return localListings;
   }
 
+  List<EnergyListing> _getMockListings() {
+    // Platform wallet that receives payments
+    const platformWallet = '0x5CB9141132599DdA1572a528a9cF6f45EAC8F5Bb';
+    const pricePerKwh = 0.15;
+    const energyAmount = 25.0;
+    const totalPrice = energyAmount * pricePerKwh;
+
+    return [
+      EnergyListing(
+        id: 1001,
+        sellerAddress: platformWallet,
+        energyKwh: energyAmount,
+        pricePerKwh: pricePerKwh,
+        totalPrice: totalPrice,
+        isActive: true,
+        isSold: false,
+        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+      ),
+      EnergyListing(
+        id: 1002,
+        sellerAddress: platformWallet,
+        energyKwh: energyAmount,
+        pricePerKwh: pricePerKwh,
+        totalPrice: totalPrice,
+        isActive: true,
+        isSold: false,
+        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
+      ),
+      EnergyListing(
+        id: 1003,
+        sellerAddress: platformWallet,
+        energyKwh: energyAmount,
+        pricePerKwh: pricePerKwh,
+        totalPrice: totalPrice,
+        isActive: true,
+        isSold: false,
+        createdAt: DateTime.now(),
+      ),
+      EnergyListing(
+        id: 1004,
+        sellerAddress: platformWallet,
+        energyKwh: 50.0,
+        pricePerKwh: 0.12,
+        totalPrice: 50.0 * 0.12,
+        isActive: true,
+        isSold: false,
+        createdAt: DateTime.now(),
+      ),
+    ];
+  }
+
+  // Get listings created by user (selling)
   Future<List<EnergyListing>> getMyListings(String walletAddress) async {
     final all = await _getAllLocalListings();
     return all.where((l) =>
       l.sellerAddress.toLowerCase() == walletAddress.toLowerCase()
+    ).toList();
+  }
+
+  // Get ALL energy trades (both bought and sold) for user
+  Future<List<EnergyListing>> getMyEnergyTrades(String walletAddress) async {
+    final all = await _getAllLocalListings();
+    return all.where((l) {
+      final isSeller = l.sellerAddress.toLowerCase() == walletAddress.toLowerCase();
+      final isBuyer = l.buyerAddress != null && l.buyerAddress!.toLowerCase() == walletAddress.toLowerCase();
+      return isSeller || isBuyer;
+    }).toList();
+  }
+
+  // Get listings bought by user
+  Future<List<EnergyListing>> getMyPurchases(String walletAddress) async {
+    final all = await _getAllLocalListings();
+    return all.where((l) =>
+      l.isSold && l.buyerAddress != null && l.buyerAddress!.toLowerCase() == walletAddress.toLowerCase()
     ).toList();
   }
 
@@ -80,13 +158,18 @@ class EnergyTradingService {
     }
 
     // Try on-chain
-    final txHash = await _web3Service.listEnergy(
-      fromAddress: walletAddress,
-      energyKwh: energyKwh,
-      pricePerKwh: pricePerKwh,
-    );
+    String? txHash;
+    try {
+      txHash = await _web3Service.listEnergy(
+        fromAddress: walletAddress,
+        energyKwh: energyKwh,
+        pricePerKwh: pricePerKwh,
+      );
+    } catch (e) {
+      debugPrint('On-chain listing failed, saving locally: $e');
+    }
 
-    // Deduct credits locally
+    // Deduct credits locally only after listing is created
     await prefs.setDouble(key, currentCredits - energyKwh);
 
     final listing = EnergyListing(
@@ -126,12 +209,14 @@ class EnergyTradingService {
       txHash: paymentTxHash,
     );
 
-    // Update local listing
+    // Update local listing (or create if doesn't exist - for mock listings)
     final listings = await _getAllLocalListings();
     final index = listings.indexWhere((l) => l.id == listingId);
+
+    EnergyListing updatedListing;
     if (index != -1) {
       final old = listings[index];
-      listings[index] = EnergyListing(
+      updatedListing = EnergyListing(
         id: old.id,
         sellerAddress: old.sellerAddress,
         energyKwh: old.energyKwh,
@@ -143,8 +228,25 @@ class EnergyTradingService {
         txHash: paymentTxHash,
         createdAt: old.createdAt,
       );
-      await _saveAllListingsLocally(listings);
+      listings[index] = updatedListing;
+    } else {
+      // Listing doesn't exist locally (e.g., mock listing) - create it
+      updatedListing = EnergyListing(
+        id: listingId,
+        sellerAddress: sellerAddress,
+        energyKwh: energyKwh,
+        pricePerKwh: totalPriceUsd / energyKwh,
+        totalPrice: totalPriceUsd,
+        isActive: false,
+        isSold: true,
+        buyerAddress: buyerAddress,
+        txHash: paymentTxHash,
+        createdAt: DateTime.now(),
+      );
+      listings.add(updatedListing);
     }
+
+    await _saveAllListingsLocally(listings);
 
     // Add credits to buyer locally
     final prefs = await SharedPreferences.getInstance();

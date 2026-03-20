@@ -108,30 +108,32 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             'Insufficient Balance',
             style: TextStyle(color: Colors.white),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Your wallet balance is insufficient to complete this payment.',
-                style: TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Required: ${amountInEth.toStringAsFixed(4)} ETH (\$${widget.totalAmount.toStringAsFixed(2)})',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Available: ${_walletBalance.toStringAsFixed(4)} ETH (\$${(_walletBalance * PaymentConfig.ethToUsdRate).toStringAsFixed(2)})',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Please add funds to your wallet and try again.',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your wallet balance is insufficient to complete this payment.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Required: ${amountInEth.toStringAsFixed(4)} ETH (\$${widget.totalAmount.toStringAsFixed(2)})',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Available: ${_walletBalance.toStringAsFixed(4)} ETH (\$${(_walletBalance * PaymentConfig.ethToUsdRate).toStringAsFixed(2)})',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Please add funds to your wallet and try again.',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -217,36 +219,41 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 children: [
                   Icon(Icons.check_circle, color: AppColors.green, size: 24),
                   SizedBox(width: 8),
-                  Text(
-                    'Payment Successful!',
-                    style: TextStyle(color: Colors.white),
+                  Expanded(
+                    child: Text(
+                      'Payment Successful!',
+                      style: TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Your payment has been processed successfully.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Transaction: ${hash.substring(0, 10)}...${hash.substring(hash.length - 8)}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Amount: \$${widget.totalAmount.toStringAsFixed(2)}',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Updated Balance: ${_walletBalance.toStringAsFixed(4)} ETH (\$${(_walletBalance * PaymentConfig.ethToUsdRate).toStringAsFixed(2)})',
-                    style: const TextStyle(color: Colors.green, fontSize: 12),
-                  ),
-                ],
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your payment has been processed successfully.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Transaction: ${hash.substring(0, 10)}...${hash.substring(hash.length - 8)}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Amount: \$${widget.totalAmount.toStringAsFixed(2)}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Updated Balance: ${_walletBalance.toStringAsFixed(4)} ETH (\$${(_walletBalance * PaymentConfig.ethToUsdRate).toStringAsFixed(2)})',
+                      style: const TextStyle(color: Colors.green, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -258,10 +265,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.popUntil(context, (route) => route.isFirst);
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                    nav.popUntil((route) => route.isFirst);
                     Future.delayed(const Duration(milliseconds: 300), () {
-                      Navigator.pushNamed(context, '/wallet');
+                      if (mounted) nav.pushNamed('/wallet');
                     });
                   },
                   style: ElevatedButton.styleFrom(
@@ -610,9 +618,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               children: [
                 Icon(Icons.lock, color: AppColors.green, size: 16),
                 SizedBox(width: 8),
-                Text(
-                  'Payments are secure and encrypted',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    'Payments are secure and encrypted',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ),
               ],
             ),

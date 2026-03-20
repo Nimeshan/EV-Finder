@@ -102,10 +102,12 @@ class _ReviewDialogState extends State<ReviewDialog> {
           TextField(
             controller: _commentController,
             maxLines: 3,
+            maxLength: 500,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Share your experience (optional)',
               hintStyle: const TextStyle(color: Colors.white54),
+              counterStyle: const TextStyle(color: Colors.white38),
               filled: true,
               fillColor: AppColors.background,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
